@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Simulador de Comprensión Lectora · Idiomas UVM</title>
+<style>
+  /* ========== UVM tokens ========== */
+  :root{
+    --rojo:#C8102E;
+    --rojo-oscuro:#9E0C24;
+    --negro:#1A1A1A;
+    --blanco:#FFFFFF;
+    --gris:#F2F2F2;
+    --gris-2:#DCDCDC;
+    --gris-texto:#5C5C5C;
+    --verde:#1E7F4F;
+    --verde-bg:#E4F3EA;
+    --rojo-bg:#FBE7EA;
+    --ambar:#B86E00;
+    --ambar-bg:#FFF3DF;
+    --font: "Liberation Sans", Arial, Helvetica, sans-serif;
+    --radius:6px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:var(--font);
+    background:var(--gris);
+    color:var(--negro);
+    font-size:16px;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  a{color:var(--rojo)}
+  button{font-family:inherit;font-size:inherit;cursor:pointer}
+  button:focus-visible, a:focus-visible, input:focus-visible, label:focus-within{
+    outline:3px solid var(--rojo); outline-offset:2px;
+  }
+  .oculto{display:none !important}
+
+  /* ========== Top bar ========== */
+  .barra{
+    background:var(--negro);
+    color:var(--blanco);
+    height:56px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px;
+    border-bottom:4px solid var(--rojo);
+    position:sticky; top:0; z-index:20;
+  }
+  .barra .marca{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.2px}
+  .barra .marca .cuadro{
+    width:30px;height:30px;background:var(--rojo);
+    display:grid;place-items:center;font-weight:900;font-size:13px;border-radius:3px;
+  }
+  .barra .marca small{font-weight:400;color:#BDBDBD;margin-left:2px}
+  .barra .usuario{display:flex;align-items:center;gap:12px;font-size:14px}
+  .barra .usuario .avatar{
+    width:32px;height:32px;border-radius:50%;background:var(--rojo);
+    display:grid;place-items:center;font-weight:700;
+  }
+  .barra .btn-texto{
+    background:transparent;border:1px solid #555;color:var(--blanco);
+    padding:6px 12px;border-radius:var(--radius);font-size:13px;
+  }
+  .barra .btn-texto:hover{border-color:var(--blanco)}
+
+  /* ========== Buttons ========== */
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:11px 20px;border-radius:var(--radius);border:2px solid transparent;
+    font-weight:700;text-decoration:none;
+  }
+  .btn-rojo{background:var(--rojo);color:var(--blanco)}
+  .btn-rojo:hover{background:var(--rojo-oscuro)}
+  .btn-rojo:disabled{background:#C9C9C9;cursor:not-allowed}
+  .btn-borde{background:var(--blanco);color:var(--negro);border-color:var(--negro)}
+  .btn-borde:hover{background:var(--negro);color:var(--blanco)}
+  .btn-suave{background:var(--gris);color:var(--negro)}
+  .btn-suave:hover{background:var(--gris-2)}
+
+  /* ========== Login ========== */
+  .login-fondo{
+    min-height:100vh;
+    display:grid;place-items:center;
+    padding:24px;
+    background:
+      linear-gradient(135deg, var(--negro) 0 52%, var(--rojo) 52% 53%, var(--gris) 53% 100%);
+  }
+  .login-caja{
+    background:var(--blanco);
+    width:100%;max-width:440px;
+    padding:40px 40px 32px;
+    border-radius:var(--radius);
+    box-shadow:0 12px 40px rgba(0,0,0,.25);
+    border-top:6px solid var(--rojo);
+  }
+  .login-caja h1{margin:0 0 4px;font-size:26px;line-height:1.2}
+  .login-caja .sub{margin:0 0 28px;color:var(--gris-texto);font-size:15px}
+  .btn-google{
+    width:100%;display:flex;align-items:center;justify-content:center;gap:12px;
+    background:var(--blanco);border:2px solid var(--gris-2);color:var(--negro);
+    padding:12px 16px;border-radius:var(--radius);font-weight:700;font-size:15px;
+  }
+  .btn-google:hover{border-color:var(--negro);background:var(--gris)}
+  .btn-google svg{width:20px;height:20px}
+  .login-nota{
+    margin-top:24px;padding:12px 14px;background:var(--ambar-bg);color:var(--ambar);
+    border-radius:var(--radius);font-size:13px;line-height:1.45;
+  }
+  .login-pie{margin-top:20px;font-size:12px;color:var(--gris-texto)}
+
+  /* account chooser modal */
+  .modal-fondo{
+    position:fixed;inset:0;background:rgba(0,0,0,.55);
+    display:grid;place-items:center;z-index:50;padding:16px;
+  }
+  .modal{
+    background:var(--blanco);width:100%;max-width:420px;
+    border-radius:8px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.4);
+  }
+  .modal h2{margin:0 0 4px;font-size:20px}
+  .modal p{margin:0 0 20px;color:var(--gris-texto);font-size:14px}
+  .cuenta{
+    display:flex;align-items:center;gap:14px;
+    width:100%;text-align:left;
+    padding:12px;border:1px solid var(--gris-2);border-radius:var(--radius);
+    background:var(--blanco);margin-bottom:10px;
+  }
+  .cuenta:hover{background:var(--gris);border-color:var(--negro)}
+  .cuenta .av{
+    width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+    color:var(--blanco);font-weight:700;flex-shrink:0;
+  }
+  .cuenta .info{line-height:1.3}
+  .cuenta .info b{display:block}
+  .cuenta .info span{font-size:13px;color:var(--gris-texto)}
+  .cuenta .rol{
+    margin-left:auto;font-size:11px;font-weight:700;
+    padding:3px 8px;border-radius:99px;background:var(--gris);color:var(--gris-texto);
+  }
+
+  /* ========== Layout ========== */
+  .contenedor{max-width:1120px;margin:0 auto;padding:32px 24px 64px}
+  .encabezado{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;margin-bottom:28px;
+    padding-bottom:16px;border-bottom:2px solid var(--negro);
+  }
+  .encabezado h1{margin:0;font-size:30px;line-height:1.15}
+  .encabezado p{margin:6px 0 0;color:var(--gris-texto)}
+
+  /* ========== Dashboard ========== */
+  .seccion{
+    background:var(--blanco);
+    border-radius:var(--radius);
+    margin-bottom:22px;
+    overflow:hidden;
+    border:1px solid var(--gris-2);
+  }
+  .seccion-cab{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:16px 22px;
+    background:var(--negro);color:var(--blanco);
+    border-left:8px solid var(--rojo);
+  }
+  .seccion-cab h2{margin:0;font-size:18px}
+  .seccion-cab .meta{font-size:13px;color:#C8C8C8}
+  .lecturas{padding:8px 0}
+  .lectura{
+    display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;
+    padding:16px 22px;
+    border-bottom:1px solid var(--gris);
+  }
+  .lectura:last-child{border-bottom:0}
+  .lectura h3{margin:0 0 3px;font-size:17px}
+  .lectura .datos{font-size:13px;color:var(--gris-texto);display:flex;gap:14px;flex-wrap:wrap}
+  .lectura .datos span::before{
+    content:"";display:inline-block;width:6px;height:6px;
+    background:var(--rojo);border-radius:50%;margin-right:6px;vertical-align:middle;
+  }
+  .lectura .resultado{
+    font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;
+  }
+  .resultado.ok{background:var(--verde-bg);color:var(--verde)}
+  .resultado.mal{background:var(--rojo-bg);color:var(--rojo)}
+
+  /* ========== Exam ========== */
+  .examen{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:28px;align-items:start;
+  }
+  .panel-lectura{
+    background:var(--blanco);border-radius:var(--radius);
+    border:1px solid var(--gris-2);
+    padding:28px 32px;
+    position:sticky;top:76px;
+    max-height:calc(100vh - 100px);overflow:auto;
+  }
+  .panel-lectura h2{margin:0 0 4px;font-size:22px;line-height:1.2}
+  .panel-lectura .fuente{font-size:12px;color:var(--gris-texto);margin-bottom:18px}
+  .panel-lectura p{margin:0 0 14px;font-size:15.5px;line-height:1.65;max-width:62ch}
+  .panel-lectura p .parr{
+    color:var(--rojo);font-weight:700;font-size:12px;margin-right:6px;
+  }
+  .panel-preguntas{display:flex;flex-direction:column;gap:14px}
+  .barra-progreso{
+    background:var(--blanco);border:1px solid var(--gris-2);border-radius:var(--radius);
+    padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+    position:sticky;top:76px;z-index:5;
+  }
+  .barra-progreso .pista{
+    flex:1;height:8px;background:var(--gris);border-radius:99px;overflow:hidden;
+  }
+  .barra-progreso .pista i{
+    display:block;height:100%;background:var(--rojo);width:0;
+    transition:width .25s ease;
+  }
+  .barra-progreso .num{font-size:13px;font-weight:700;white-space:nowrap}
+  .barra-progreso .reloj{
+    font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;
+    padding:4px 10px;border-radius:var(--radius);background:var(--negro);color:var(--blanco);
+  }
+  .barra-progreso .reloj.alerta{background:var(--rojo)}
+
+  .pregunta{
+    background:var(--blanco);border:1px solid var(--gris-2);border-radius:var(--radius);
+    padding:20px 22px;
+  }
+  .pregunta.sin-responder{border-left:4px solid var(--ambar)}
+  .pregunta .enunciado{
+    display:flex;gap:12px;margin:0 0 14px;font-weight:700;line-height:1.4;
+  }
+  .pregunta .enunciado .n{
+    flex-shrink:0;width:30px;height:30px;border-radius:50%;
+    background:var(--negro);color:var(--blanco);
+    display:grid;place-items:center;font-size:13px;
+  }
+  .opcion{
+    display:flex;align-items:flex-start;gap:12px;
+    padding:11px 12px;border-radius:var(--radius);
+    border:1px solid var(--gris-2);margin-bottom:8px;cursor:pointer;
+    transition:background .12s, border-color .12s;
+  }
+  .opcion:hover{background:var(--gris)}
+  .opcion input{margin-top:3px;accent-color:var(--rojo)}
+  .opcion .letra{font-weight:700;width:20px;flex-shrink:0}
+  .opcion.elegida{border-color:var(--rojo);background:var(--rojo-bg)}
+  /* review states */
+  .opcion.correcta{border-color:var(--verde);background:var(--verde-bg)}
+  .opcion.incorrecta{border-color:var(--rojo);background:var(--rojo-bg)}
+  .opcion.correcta .letra::after{content:" ✓";color:var(--verde)}
+  .opcion.incorrecta .letra::after{content:" ✕";color:var(--rojo)}
+  .justificacion{
+    margin-top:10px;padding:12px 14px;font-size:14px;
+    background:var(--gris);border-radius:var(--radius);
+    border-left:4px solid var(--negro);
+  }
+  .justificacion b{display:block;margin-bottom:2px;font-size:12px;color:var(--gris-texto)}
+
+  .acciones{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px}
+  .aviso{
+    background:var(--ambar-bg);color:var(--ambar);padding:12px 16px;
+    border-radius:var(--radius);font-size:14px;
+  }
+
+  /* ========== Results ========== */
+  .resumen{
+    display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:center;
+    background:var(--negro);color:var(--blanco);
+    padding:32px;border-radius:var(--radius);
+    border-left:10px solid var(--rojo);margin-bottom:28px;
+  }
+  .resumen .puntaje{font-size:72px;font-weight:900;line-height:1;letter-spacing:-2px}
+  .resumen .puntaje small{font-size:24px;font-weight:400;color:#BDBDBD;margin-left:4px}
+  .resumen h2{margin:0 0 6px;font-size:22px}
+  .resumen p{margin:0;color:#D0D0D0}
+  .habilidades{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;
+    margin-bottom:28px;
+  }
+  .hab{
+    background:var(--blanco);border:1px solid var(--gris-2);border-radius:var(--radius);
+    padding:14px 16px;
+  }
+  .hab .nombre{font-size:13px;color:var(--gris-texto);margin-bottom:6px;line-height:1.3}
+  .hab .frac{font-size:22px;font-weight:700}
+  .hab .frac small{font-size:13px;font-weight:400;color:var(--gris-texto)}
+  .hab .mini{height:5px;background:var(--gris);border-radius:99px;margin-top:8px;overflow:hidden}
+  .hab .mini i{display:block;height:100%;background:var(--rojo)}
+  .hab.perfecta .mini i{background:var(--verde)}
+
+  /* ========== Teacher view ========== */
+  .tabla{width:100%;border-collapse:collapse;background:var(--blanco);
+    border:1px solid var(--gris-2);border-radius:var(--radius);overflow:hidden}
+  .tabla th,.tabla td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--gris)}
+  .tabla th{background:var(--negro);color:var(--blanco);font-size:13px;font-weight:700}
+  .tabla tr:last-child td{border-bottom:0}
+  .tabla td.num{text-align:right;font-variant-numeric:tabular-nums}
+
+  @media (max-width:860px){
+    .barra{padding:0 14px}
+    .barra .marca small, .barra .usuario span{display:none}
+    .barra .btn-texto{padding:6px 10px;white-space:nowrap}
+    .panel-lectura > h2{display:none}
+    .examen{grid-template-columns:1fr}
+    .panel-lectura{position:static;max-height:none}
+    .barra-progreso{top:56px}
+    .resumen{grid-template-columns:1fr;text-align:center}
+    .contenedor{padding:20px 16px 48px}
+    .login-caja{padding:28px 24px 24px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     PANTALLA: LOGIN (mock — luego se reemplaza por Firebase Auth)
+     ============================================================ -->
+<div id="vista-login" class="login-fondo">
+  <div class="login-caja">
+    <h1>Simulador de comprensión lectora</h1>
+    <p class="sub">Academias de Idiomas · UVM Campus Mérida</p>
+
+    <button class="btn-google" id="btn-google">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.5l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.5 13.3l7.9 6.1C12.3 13.6 17.7 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.2z"/>
+        <path fill="#FBBC05" d="M10.4 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.9-6.1C.9 16.6 0 20.2 0 24s.9 7.4 2.5 10.7l7.9-6.1z"/>
+        <path fill="#34A853" d="M24 48c6.3 0 11.7-2.1 15.6-5.7l-7.7-6c-2.1 1.4-4.8 2.3-7.9 2.3-6.3 0-11.7-4.1-13.6-9.9l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/>
+      </svg>
+      Continuar con Google
+    </button>
+
+    <div class="login-nota">
+      Prototipo de demostración. El inicio de sesión es simulado — la
+      versión final usará cuentas institucionales a través de Firebase Authentication.
+    </div>
+    <div class="login-pie">G. Leonardo Peña Quintal · Ingeniería Mecatrónica</div>
+  </div>
+</div>
+
+<!-- Selector de cuenta (imita al de Google) -->
+<div id="modal-cuentas" class="modal-fondo oculto" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+  <div class="modal">
+    <h2 id="modal-titulo">Elige una cuenta</h2>
+    <p>para continuar a Simulador Idiomas UVM</p>
+    <div id="lista-cuentas"></div>
+    <button class="btn btn-suave" id="btn-cancelar-modal" style="width:100%;justify-content:center;margin-top:6px">Cancelar</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     APP (visible después del login)
+     ============================================================ -->
+<div id="app" class="oculto">
+  <header class="barra">
+    <div class="marca">
+      <div class="cuadro">UVM</div>
+      <div>Simulador Idiomas <small>· Comprensión lectora</small></div>
+    </div>
+    <div class="usuario">
+      <div class="avatar" id="avatar-ini">A</div>
+      <span id="usuario-nombre"></span>
+      <button class="btn-texto" id="btn-salir">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main class="contenedor" id="main"></main>
+</div>
+
+<script>
+/* =====================================================================
+   DATOS DEL BANCO DE REACTIVOS
+   ---------------------------------------------------------------------
+   Estructura pensada para migrar 1:1 a Firestore:
+     secciones (col) → {id, nombre, academia, descripcion}
+       lecturas (subcol) → {id, titulo, fuente, minutos, parrafos[]}
+         preguntas (subcol) → {n, enunciado, opciones[], correcta, habilidad, justificacion}
+   "correcta" es el índice 0-based dentro de opciones.
+   ===================================================================== */
+const SECCIONES = [
+  {
+    id:"a2-reading",
+    nombre:"Reading Comprehension — Nivel A2",
+    academia:"Academia de Inglés",
+    descripcion:"Lecturas breves de vida cotidiana. Opción múltiple con 3 alternativas.",
+    lecturas:[
+      {
+        id:"vacation-every-day",
+        titulo:"Vacation Every Day",
+        fuente:"Reading1.docx",
+        minutos:12,
+        parrafos:[
+          `Mary Larson was 43 when she got divorced. It was a fresh start for her, and she began considering what was really important. She was working 60 hours a week as a banker to pay for her big house, expensive furniture, a new car, and all the other "important" things in life. But she had no time for what she really enjoyed: going out on her old houseboat.`,
+          `One day, she realized she could live on the boat and forget about the mortgage payments. She sold her house and all her furniture. For the last six years, she and her dog Buddy have lived on the boat, which is only a fraction of the size of her old house. Her "home" is in a marina on the river, and the rent is a lot cheaper and includes water and electricity.`,
+          `The boat has one room which measures about five by four meters. It's divided into two parts by a curtain. One part is Mary's bedroom; the other is the living room and kitchen.`,
+          `There's also a small bathroom with a shower. "I used to spend every weekend cleaning and maintaining my house. Now it takes me two or three hours a month," Mary says.`,
+          `"My friends think I'm crazy," she says. "But I wake up in the morning and hear the calls of ducks and birds. I can go fishing from my living room." Now she works only part time. She uses all the extra hours for writing stories, cycling, volunteering, and visiting friends. On the weekends, she goes along the river on her boat, exploring new places.`,
+          `"Would I go back to my old life? Never!" she says. "It's so peaceful here. It's like being on vacation every day."`
+        ],
+        preguntas:[
+          {enunciado:"How old was Mary when she got divorced?",opciones:["43","40","46"],correcta:0,habilidad:"Specific information"},
+          {enunciado:"What was Mary's job before she changed her lifestyle?",opciones:["Teacher","Banker","Writer"],correcta:1,habilidad:"Specific information"},
+          {enunciado:"Why did Mary decide to sell her house?",opciones:["She wanted to buy a bigger boat.","She could no longer afford to maintain it.","She realized she could live on her boat instead."],correcta:2,habilidad:"Cause / effect"},
+          {enunciado:"Where does Mary's boat serve as her home?",opciones:["On a lake","In a marina on a river","Near the ocean"],correcta:1,habilidad:"Specific information"},
+          {enunciado:"How is the main room of the boat organized?",opciones:["It has two separate bedrooms and a kitchen.","It is divided into two parts by a curtain.","It has a bedroom, a bathroom, and a large living room."],correcta:1,habilidad:"Supporting detail"},
+          {enunciado:"What does Mary mean when she says that the boat is only a \"fraction\" of the size of her old house?",opciones:["The boat is much smaller than her previous house.","The boat is almost the same size as her previous house.","The boat is larger than her previous house."],correcta:0,habilidad:"Vocabulary in context"},
+          {enunciado:"What is one important difference between Mary's old life and her current life?",opciones:["She now spends more time working and less time relaxing.","She has less free time because she has to maintain the boat.","She works part time and has more time for activities she enjoys."],correcta:2,habilidad:"Inference"},
+          {enunciado:"What does Mary do with some of the extra time she has now?",opciones:["She writes stories, cycles, volunteers, and visits friends.","She works extra hours and travels to different countries.","She spends most of her time cleaning and maintaining her boat."],correcta:0,habilidad:"Specific information"},
+          {enunciado:"Why do Mary's friends think she is \"crazy\"?",opciones:["Because she works too many hours and never takes vacations.","Because she gave up a large house and a more traditional lifestyle to live on a small boat.","Because she spends every weekend traveling far away from her home."],correcta:1,habilidad:"Inference"},
+          {enunciado:"Which statement best describes the main idea of the reading?",opciones:["Mary discovers that having a smaller home can give her more free time and a more enjoyable life.","Mary decides to live on a boat because she wants to become a professional fisherman and travel around the world.","Mary sells her house because she cannot pay her mortgage and eventually regrets leaving her old lifestyle."],correcta:0,habilidad:"Main idea"}
+        ]
+      }
+    ]
+  },
+  {
+    id:"domina",
+    nombre:"DOMINA — Práctica de Reading Comprehension",
+    academia:"Academia de Inglés",
+    descripcion:"Texto expositivo de divulgación científica. Opción múltiple con 4 alternativas.",
+    lecturas:[
+      {
+        id:"ocean-acidic",
+        titulo:"When the Ocean Becomes More Acidic",
+        fuente:"Adaptado de NOAA, Lesson 3: Ocean Acidification (NEMO Curriculum, 2010). Dominio público.",
+        minutos:20,
+        parrafos:[
+          `The ocean covers more than two-thirds of Earth's surface and plays an important role in regulating the planet's climate. It also absorbs a large amount of carbon dioxide (CO₂) from the atmosphere. This natural process helps reduce the amount of CO₂ in the air, but it also produces an important change in seawater: the ocean becomes more acidic.`,
+          `Ocean acidification is a gradual change in the chemistry of seawater. It happens when increasing amounts of carbon dioxide enter the ocean. When CO₂ dissolves in seawater, it reacts with water and produces carbonic acid. This chemical reaction reduces the pH of the water. The change may seem small, but even a small change in pH can affect marine organisms.`,
+          `Human activities have increased the amount of carbon dioxide in the atmosphere. The burning of coal, oil, and natural gas releases CO₂ into the air. Some of this carbon dioxide remains in the atmosphere, while a significant amount is absorbed by the ocean. In this way, the ocean acts as a kind of carbon sink, taking carbon dioxide from the atmosphere and storing it in seawater.`,
+          `However, there is a cost to this process. As more CO₂ enters the ocean, the chemistry of seawater changes. One important consequence is a reduction in the availability of carbonate ions. These ions are essential for many marine organisms because they use them, together with calcium, to build shells and other hard structures.`,
+          `Animals such as oysters, clams, mussels, and some types of plankton depend on calcium carbonate to build and maintain their shells. Corals also use calcium carbonate to create the structures that form coral reefs. When there are fewer carbonate ions available, these organisms may have greater difficulty building their shells or skeletons.`,
+          `This does not mean that every marine organism will immediately disappear as ocean acidification increases. Marine ecosystems are complex, and different species respond to changes in their environment in different ways. Some organisms may be more sensitive than others. Scientists therefore study ocean chemistry and marine life to understand which species are most vulnerable and how ecosystems may change over time.`,
+          `Ocean acidification can also affect people. Many coastal communities depend on fishing and shellfish farming for food and income. If changes in ocean chemistry make it more difficult for certain shellfish to grow or survive, the effects can reach beyond the animals themselves. Fishermen, farmers, businesses, and communities may also be affected.`,
+          `Scientists are continuing to study these changes and possible ways to respond to them. One important approach is to reduce the amount of carbon dioxide released into the atmosphere. Better understanding of ocean chemistry can also help communities prepare for changes that are already occurring.`,
+          `The ocean has always been part of the Earth's carbon cycle, but human activities have changed the amount of carbon entering this system. Understanding ocean acidification helps us see how changes in one part of the planet can affect many others. The chemistry of the ocean may seem distant from everyday life, but it is closely connected to marine ecosystems, human communities, and the global environment.`
+        ],
+        preguntas:[
+          {enunciado:"What is the main idea of the passage?",opciones:["Oceans are becoming warmer because marine animals produce carbon dioxide.","Ocean acidification is a chemical change caused by increasing CO₂ that can affect marine ecosystems and people.","Marine organisms are responsible for most of the carbon dioxide found in the atmosphere.","Scientists have discovered that all marine species are equally affected by changes in ocean chemistry."],correcta:1,habilidad:"Main idea"},
+          {enunciado:"According to the passage, what happens when carbon dioxide dissolves in seawater?",opciones:["It increases the amount of oxygen in the water.","It removes calcium from marine organisms.","It reacts with water and produces carbonic acid.","It prevents the ocean from absorbing additional carbon dioxide."],correcta:2,habilidad:"Specific information"},
+          {enunciado:"What does the expression \"carbon sink\" mean in paragraph 3?",opciones:["A place where carbon dioxide is produced","A system that absorbs and stores carbon","A chemical substance that destroys carbon","A process that changes carbon into oxygen"],correcta:1,habilidad:"Vocabulary in context"},
+          {enunciado:"Why are carbonate ions important to many marine organisms?",opciones:["They help organisms produce oxygen.","They protect organisms from changes in temperature.","They are necessary for building shells and other hard structures.","They prevent carbon dioxide from entering the ocean."],correcta:2,habilidad:"Specific information"},
+          {enunciado:"Which of the following organisms is mentioned as depending on calcium carbonate?",opciones:["Dolphins","Sea turtles","Oysters","Seabirds"],correcta:2,habilidad:"Supporting detail"},
+          {enunciado:"What can be inferred from paragraph 6?",opciones:["All marine species will respond to ocean acidification in exactly the same way.","Scientists need to study individual species because their responses to environmental changes may differ.","Marine ecosystems are too simple to be affected by changes in ocean chemistry.","Ocean acidification only affects animals that live near the surface."],correcta:1,habilidad:"Inference"},
+          {enunciado:"In the sentence \"This does not mean that every marine organism will immediately disappear…\", what does \"This\" refer to?",opciones:["The complexity of marine ecosystems","The fact that carbonate ions are essential","The possibility that some organisms may be affected by ocean acidification","The study of ocean chemistry"],correcta:2,habilidad:"Reference"},
+          {enunciado:"According to the passage, why can ocean acidification affect coastal communities?",opciones:["Coastal communities produce most of the world's carbon dioxide.","Many coastal communities depend on fishing and shellfish farming.","Ocean acidification causes all coastal areas to become uninhabitable.","Scientists have stopped studying marine ecosystems."],correcta:1,habilidad:"Cause / effect"},
+          {enunciado:"Which statement is NOT supported by the passage?",opciones:["Human activities have increased atmospheric CO₂.","The ocean absorbs part of the CO₂ in the atmosphere.","Some marine organisms may have difficulty building shells when carbonate ions become less available.","Scientists have determined that ocean acidification affects every marine species in the same way."],correcta:3,habilidad:"Evaluation of information"},
+          {enunciado:"What is the author's main purpose in writing the passage?",opciones:["To persuade readers to stop eating seafood","To describe the causes and possible consequences of ocean acidification","To compare different types of marine animals","To explain how fishermen can increase shellfish production"],correcta:1,habilidad:"Author's purpose"}
+        ]
+      }
+    ]
+  },
+  {
+    id:"dominabach",
+    nombre:"DOMINABACH — Reading Exercise",
+    academia:"Academia de Inglés · Bachillerato",
+    descripcion:"Texto argumentativo con referencia por párrafo. Incluye justificación técnica por reactivo (habilidades CENEVAL).",
+    lecturas:[
+      {
+        id:"renewable-energy",
+        titulo:"The Shift Toward Renewable Energy: A High School Student Perspective",
+        fuente:"Dominabach_Reading_Exercise.docx",
+        minutos:20,
+        numerar:true,
+        parrafos:[
+          `In recent years, climate change has transformed from an abstract concept into a daily reality for youth around the globe. High school students, in particular, are showing unprecedented interest in environmental science and sustainable technology. As global temperatures rise and extreme weather events become more frequent, young people are advocating for rapid transitions to clean, renewable energy sources such as solar, wind, and geothermal power.`,
+          `Solar power has emerged as one of the most accessible green technologies. Modern photovoltaic solar panels convert sunlight directly into electricity without generating greenhouse gases. Schools in several urban regions have begun installing solar arrays on their rooftops. This initiative not only reduces operational electricity costs for educational institutions but also serves as an interactive, real-time laboratory for physics and environmental science classes.`,
+          `However, the transition to 100% renewable energy presents technical and economic challenges. Intermittency remains the primary obstacle: solar panels cannot produce energy at night, and wind turbines rely on unpredictable weather conditions. To address this issue, engineers are developing advanced battery storage systems, such as lithium-ion and flow batteries, which store excess electricity generated during peak production hours for later use.`,
+          `Furthermore, economic factors play a crucial role. Although the cost of manufacturing solar panels has decreased by over 80% in the last decade, the initial installation of renewable infrastructure still requires significant capital investment. Opponents often argue that fossil fuels remain more reliable and cheaper in the short term. Nonetheless, environmental economists emphasize that long-term savings and ecological protection far outweigh initial expenses.`,
+          `Ultimately, achieving a sustainable future requires both technological innovation and active civic engagement. Teenagers today are not merely passive observers of environmental degradation; they are organizing school green clubs, participating in community recycling projects, and encouraging local government leaders to invest in green infrastructure. Education empowers young citizens to drive meaningful ecological progress.`
+        ],
+        preguntas:[
+          {enunciado:"What is the main topic of the text?",opciones:["The historical development of traditional fossil fuels","The adoption of renewable energy and youth engagement","The financial advantages of installing school solar panels"],correcta:1,habilidad:"Comprensión global / Idea principal",justificacion:"El texto aborda tanto la adopción de energías renovables como el papel activo e interés de los estudiantes de bachillerato ante el cambio climático (Párrafos 1 y 5)."},
+          {enunciado:"According to Paragraph 1, why are young people advocating for clean energy sources?",opciones:["Because extreme weather events and global temperatures are increasing","Because high school science textbooks strictly require clean energy projects","Because traditional energy sources have become completely unavailable"],correcta:0,habilidad:"Comprensión específica / Detalle",justificacion:"El Párrafo 1 lo menciona explícitamente: conforme suben las temperaturas y los eventos climáticos extremos son más frecuentes, los jóvenes abogan por energías limpias."},
+          {enunciado:"According to Paragraph 2, how do rooftop solar panels benefit schools?",opciones:["They completely eliminate the need for electricity bills and teachers","They reduce electricity expenses and provide a practical educational tool","They produce greenhouse gases that can be analyzed in chemistry classes"],correcta:1,habilidad:"Comprensión específica / Detalle",justificacion:"El Párrafo 2 destaca dos beneficios: reduce los costos operativos de electricidad y sirve como un laboratorio interactivo en tiempo real."},
+          {enunciado:"The word \"intermittency\" in Paragraph 3 refers to the fact that clean energy:",opciones:["is available constantly throughout every hour of the day","is not generated continuously due to weather or night hours","requires very low maintenance and zero financial costs"],correcta:1,habilidad:"Vocabulario en contexto",justificacion:"El término se explica en el Párrafo 3 al mencionar que los paneles no producen energía de noche y las turbinas dependen del clima imprevisto."},
+          {enunciado:"What solution do engineers propose in Paragraph 3 to solve energy storage issues?",opciones:["Building additional fossil fuel power plants near urban schools","Utilizing advanced battery systems to store excess electricity","Stopping electricity usage completely during nighttime hours"],correcta:1,habilidad:"Comprensión específica / Solución",justificacion:"El Párrafo 3 afirma que los ingenieros desarrollan sistemas avanzados de baterías para almacenar el exceso de energía."},
+          {enunciado:"According to Paragraph 4, by how much has the manufacturing cost of solar panels decreased in the past decade?",opciones:["Over 80%","Exactly 50%","Less than 20%"],correcta:0,habilidad:"Localización de información explícita",justificacion:"El Párrafo 4 señala que el costo de fabricación de paneles solares ha bajado más de 80% en la última década."},
+          {enunciado:"What argument do opponents of renewable energy present in Paragraph 4?",opciones:["Renewable energy infrastructure is completely impossible to build","Fossil fuels are cheaper and more reliable in the short term","Solar energy causes more environmental damage than coal"],correcta:1,habilidad:"Comprensión específica / Argumento",justificacion:"El Párrafo 4 indica que los opositores argumentan que los combustibles fósiles son más confiables y baratos a corto plazo."},
+          {enunciado:"The word \"empowers\" in Paragraph 5 is closest in meaning to:",opciones:["restricts","enables","ignores"],correcta:1,habilidad:"Vocabulario en contexto / Sinónimos",justificacion:"'Empowers' significa dar poder o capacitar a alguien. En el contexto de la frase, el sinónimo más adecuado es 'enables' (permite/capacita)."},
+          {enunciado:"What is the author's tone regarding the role of teenagers in environmental protection?",opciones:["Skeptical and critical","Positive and encouraging","Neutral and indifferent"],correcta:1,habilidad:"Inferencia / Actitud y tono",justificacion:"El autor resalta el liderazgo, la participación activa y el impacto positivo de los jóvenes, manteniendo un tono optimista y alentador."},
+          {enunciado:"Which of the following can be inferred from the passage?",opciones:["High school students are taking an active role in pushing for sustainable solutions","Fossil fuels will be completely replaced by solar energy within the next year","Solar panels work with maximum efficiency during heavy storms and at night"],correcta:0,habilidad:"Inferencia global",justificacion:"A lo largo del texto, especialmente en los Párrafos 1 y 5, se infiere que los estudiantes de nivel medio superior están asumiendo un rol proactivo frente a los retos ambientales."}
+        ]
+      }
+    ]
+  },
+  {
+    id:"reactivos-ceneval",
+    nombre:"Reactivos de Comprensión Lectora",
+    academia:"Academia de Inglés · Preparación CENEVAL",
+    descripcion:"Tres lecturas cortas de divulgación (Frontiers for Young Minds) con 4 reactivos cada una. Párrafos numerados con corchetes.",
+    lecturas:[
+      {
+        id:"vaccines",
+        titulo:"Vaccines, Shots That Protect You",
+        fuente:"Neunez M, Goldman M, Goldman S y Lambert P-H (2019). Front. Young Minds 7:31.",
+        minutos:8,
+        numerar:true,
+        parrafos:[
+          `Tomorrow, your mother will take you to the doctor to receive your vaccines. Why do you need these shots since you are healthy and have already received some shots when you were just a baby? In this article, you will discover the reasons why booster vaccines are crucial, to protect you, your brothers and sisters but also your classmates and your friends.`,
+          `While medicines are usually given to a person who is sick, vaccines are injected to healthy children or adults to keep them from getting diseases that are transmitted by tiny living organisms named microbes. Vaccination is the best way to date to prevent diseases that are called infectious diseases.`,
+          `When your grandparents were your age, many children suffered from measles, a disease caused by a virus. Most often, they would heal from it, but sometimes, the disease caused serious complications, involving the lungs or the brain, that could be deadly. Thanks to vaccination, measles nearly disappeared completely. This is also the case for several other childhood illnesses, such as poliomyelitis that caused paralysis of the legs. To date, we count more than 10 infectious diseases that are prevented thanks to vaccines. Unfortunately, not all children have the chance to be vaccinated: either because they live in areas of the world where vaccines are not available or difficult to access, or because their parents are against vaccination.`,
+          `When you are vaccinated, not only are you protected against the microbe, but you also decrease the risk of transmitting that disease to your friends and family. This is called herd protection. If the majority of the population is vaccinated, microbes will not succeed in propagating. It is believed that when 9 individuals out of 10 are vaccinated, the entire population is protected so that the disease becomes "invisible". However, the disease can resurface at any point if the proportion of vaccinated individuals decreases. Sadly, this is what is happening today with measles and other infectious diseases: within the first 6 months of the year 2018, more than 40,000 Europeans contracted measles while some thought that it had disappeared for good.`,
+          `As each microbe is different from the other, multiple vaccines have to be used. Do not worry, it is now common to give multiple vaccines in a single shot. You probably ask yourself: why do I have to receive several times the same vaccine in the course of my life? The answer is simple. As you know, our memory has its limitations and we have the tendency to forget things. This is also true for our immune system. It is therefore necessary to boost its memory by repeating vaccination. Boosters are indeed crucial to maintain effective protection against infectious diseases.`
+        ],
+        preguntas:[
+          {enunciado:"What is the main communicative purpose of the text?",opciones:["To inform readers about how vaccines work and explain the necessity of booster shots","To persuade governments to make vaccinations mandatory for all school students","To describe the historical medical discoveries that eradicated childhood infections"],correcta:0,habilidad:"Propósito comunicativo"},
+          {enunciado:"According to paragraph [II], how do vaccines differ from conventional medicines?",opciones:["Vaccines are exclusively applied to treat people suffering from acute bacterial infections","Vaccines are administered to healthy people to prevent diseases caused by microbes","Vaccines are designed to heal severe brain complications after a patient gets sick"],correcta:1,habilidad:"Comprensión específica"},
+          {enunciado:"Based on paragraph [IV], herd protection is achieved when...",opciones:["at least 9 out of 10 people in a community receive the vaccination","more than 40,000 infected patients are quarantined at the same time","every single person in a nation becomes immune without needing booster shots"],correcta:0,habilidad:"Localización de información"},
+          {enunciado:"According to paragraph [V], why do individuals require booster shots throughout their lives?",opciones:["Because vaccines expire inside the body after exactly six months of administration","Because the immune system's memory fades over time and needs to be reinforced","Because one single dose can only carry protection against one type of virus"],correcta:1,habilidad:"Comprensión específica / Causa"}
+        ]
+      },
+      {
+        id:"decisions",
+        titulo:"The Science of Making Good Decisions",
+        fuente:"Dayan P y Raphael O (2026). Front. Young Minds 14:1699853.",
+        minutos:8,
+        numerar:true,
+        parrafos:[
+          `What made you start reading this article? Was it a desire to learn about how people make decisions, or was it just a feeling that you could not put into words? And how did you choose what to wear this morning for school? In the study of decision making, we try to understand and model the brain mechanisms that are involved. In this article, we will explain how your brain makes decisions and share some tricks on how you can become a better decision maker in your daily life.`,
+          `Decision making is one of the most critical things that people do. On a basic level, people must make good decisions to survive. Good decisions also help people to live prosperous, satisfying lives. The great importance of decision making is also reflected in the brain, where much of this organ is devoted to the process. Many systems and brain regions participate in decision making, including those associated with memory, planning, emotions, and action control. Due to the great complexity of decision making, scientists have not yet found a complete "circuit" in the brain that allows them to explain exactly how a particular decision was made.`,
+          `Most of the decisions people make are not fully conscious. Even some of the choices you believe you make deliberately often have unconscious roots. Take buying a car: there are many factors to consider, such as looks, speed, safety, fuel efficiency, environmental impact, and comfort. In reality, people usually focus on just one or at most a couple of factors at a time—like speed and comfort—and base their choice on those, without integrating them fully. This probably reflects an unconscious bias, meaning a preference that the person is not even aware of.`,
+          `Despite the complexity of the decision-making process, the brain has what is, at least at first sight, a surprisingly simple and straightforward mechanism that influences decision making. You can think of this mechanism sort of like the "carrot and stick" strategy of the brain, which makes people repeat decisions that have beneficial outcomes and reduce decisions with undesired outcomes. This mechanism involves a substance called dopamine.`,
+          `Dopamine is a chemical messenger used as a signal that teaches us how to make better choices. To manage in the world, your brain must constantly make predictions about the consequences of your actions. So, for every action you do, your brain "guesses" what the action's outcome will be. Many times, there is a difference between what the brain predicted would happen and what really happened. This gap is called a prediction error. When things turn out better than you expected—which is called a positive prediction error—you experience a burst of dopamine (the "carrot"). This makes you repeat the same action again. If, on the other hand, things turn out worse than expected and you experience a negative prediction error (the "stick"), you will feel discouraged and lower your expectations.`
+        ],
+        preguntas:[
+          {enunciado:"What is the main purpose of the text?",opciones:["To explain how the brain processes choices and the role dopamine plays in learning from outcomes","To describe how marketing strategies exploit human brain circuits when selling vehicles","To prove that human beings are incapable of making logical decisions without professional guidance"],correcta:0,habilidad:"Propósito comunicativo"},
+          {enunciado:"According to paragraph [II], why haven't scientists fully identified an exact neural circuit for individual choices?",opciones:["Because decision making involves an immense complexity spanning multiple brain regions and systems","Because the brain stops producing chemical signals when facing complex choices","Because decisions are entirely random and fail to leave any measurable biological traces"],correcta:0,habilidad:"Comprensión específica / Causa"},
+          {enunciado:"The car-buying example in paragraph [III] demonstrates that...",opciones:["consumers invariably compare every single vehicle specification before deciding","choices often depend on unconscious biases that prioritize only a few isolated features","safety is consistently chosen by buyers as the single most critical factor"],correcta:1,habilidad:"Inferencia"},
+          {enunciado:"According to paragraph [V], a \"positive prediction error\" occurs when...",opciones:["a person chooses not to anticipate the consequences of a hazardous situation","the actual outcome of an action turns out to be superior to what the brain expected","dopamine release drops substantially after an unexpected failure in an exam"],correcta:1,habilidad:"Vocabulario en contexto"}
+        ]
+      },
+      {
+        id:"bacteria",
+        titulo:"Bacteria: The Unexpected Fans of Greenhouse Gases",
+        fuente:"Núñez-Valenzuela P, Ovis-Sánchez JO y Razo-Flores E (2026). Front. Young Minds 14:1653389.",
+        minutos:8,
+        numerar:true,
+        parrafos:[
+          `Greenhouse gases such as carbon dioxide (CO₂) help keep the Earth warm enough for us to live. But when there is too much CO₂ in the air, the Earth can be too hot, causing problems for all living organisms. Plants can take in some of the CO₂, but there is not enough vegetation to use up all the excess greenhouse gases. Fortunately, scientists have found a surprising solution: homoacetogenic bacteria. These incredible organisms live in places with no oxygen, like in soil, wetlands, or even in animal stomachs. Homoacetogenic bacteria are tiny heroes that can help clean up CO₂ by using it in combination with hydrogen (H₂) to grow and make fuel-like substances such as acetate and ethanol. By learning more about these bacteria and their abilities, scientists hope to find ways to use them to fight climate change and create sustainable energy sources.`,
+          `Our planet is surrounded by gases that act like car windows, letting sunlight in while keeping some of the heat inside. These are the greenhouse gases, and they keep our planet warm by holding some of the Sun's heat. Without them, our planet would be freezing, and it would be too cold for people, animals, and plants to survive. However, while greenhouse gases are fine in moderation, they are harmful in excess. When there are too many of them, they trap in too much heat and make Earth warmer than it should be. This process is known as the greenhouse effect, and it can have serious consequences for our planet. Even a couple of degrees increase from normal temperature can cause problems such as droughts, melting ice in the Arctic, rising sea levels, and longer heat waves.`,
+          `The main greenhouse gases are carbon dioxide (CO₂), methane (CH₄), and nitrous oxide (N₂O). CO₂ is the most famous because it comes from burning things like coal, oil, and gas to make electricity, run cars, and power factories. Earth has a natural solution: plants transform CO₂ into oxygen via photosynthesis. However, plants cannot remove enough CO₂ from the air because humans have reduced the amount of vegetation. Fortunately, scientists have found tiny organisms besides plants that can help reduce CO₂ levels and lighten the greenhouse effect.`,
+          `Some bacteria are so unique that they can survive without oxygen! Instead, to get energy, they replace oxygen with other environmental chemicals. Among the many types of bacteria that can live without oxygen, there is a special group called homoacetogenic bacteria. These tiny organisms turn out to be unexpected fans of greenhouse gases because they can use CO₂ and hydrogen (H₂) to grow and produce other chemicals. When scientists locate a possible source of homoacetogenic bacteria, they go on a bacteria treasure hunt. Instead of searching lake bottoms or other places that are difficult to access, they look in simple locations like livestock poop and wastewater treatment plants.`,
+          `These bacteria need more than CO₂ to survive. They also need a special energy source to power up, making H₂ a perfect match. Think of it like this: CO₂ is their meal, but H₂ is the fuel that helps them turn CO₂ into something useful. An easy way to get a mix of CO₂ and H₂ gases is by using a waste gas called syngas. Syngas is made by heating plant residues without burning them, in a controlled industrial process. When homoacetogenic bacteria are supplied with syngas, they transform CO₂ and H₂ into useful substances such as acetate and ethanol in a process called syngas fermentation. Acetate gives vinegar its sour taste, but it is also used to make fuel and other materials in factories. Ethanol is a type of alcohol that helps power cars and other machines.`
+        ],
+        preguntas:[
+          {enunciado:"What is the main purpose of the text?",opciones:["To explain how homoacetogenic bacteria convert greenhouse gases into useful biofuels and chemical products","To describe the engineering steps needed to build wastewater treatment facilities in rural areas","To prove that natural photosynthesis by plants is completely ineffective at capturing carbon dioxide"],correcta:0,habilidad:"Propósito comunicativo"},
+          {enunciado:"According to paragraph [III], why is natural plant photosynthesis insufficient to handle current carbon dioxide levels?",opciones:["Because agricultural crops have completely lost their capacity to release clean oxygen","Because human activity has significantly diminished the global amount of vegetation","Because carbon dioxide has been entirely replaced in the atmosphere by methane and nitrous oxide"],correcta:1,habilidad:"Comprensión específica / Causa"},
+          {enunciado:"According to paragraph [IV], why do scientists prefer sampling livestock manure and wastewater over lake bottoms?",opciones:["Because these are practical and accessible environments that naturally lack oxygen","Because the bacteria found in deep lakes are unable to consume hydrogen gas","Because syngas is naturally generated inside wastewater treatment filters"],correcta:0,habilidad:"Comprensión específica"},
+          {enunciado:"Based on paragraph [V], what role does hydrogen (H₂) play in syngas fermentation?",opciones:["It acts as an oxygen supplier to prevent bacterial cells from dying","It serves as a disinfectant that purifies vinegar and removes excess ethanol","It provides the essential energy that enables bacteria to process carbon dioxide"],correcta:2,habilidad:"Comprensión específica / Función"}
+        ]
+      }
+    ]
+  }
+];
+
+/* Cuentas simuladas para el selector "de Google" */
+const CUENTAS = [
+  {nombre:"Alumno",   correo:"alumno@uvmnet.edu",   rol:"alumno",   color:"#C8102E"},
+  {nombre:"Profesor", correo:"profesor@uvmnet.edu", rol:"profesor", color:"#1A1A1A"},
+  {nombre:"Admin",    correo:"admin@uvmnet.edu",    rol:"admin",    color:"#4A4A4A"},
+  {nombre:"Usar otra cuenta", correo:"", rol:"", color:"#8A8A8A"}
+];
+
+/* ===================================================================
+   ESTADO
+   =================================================================== */
+const estado = {
+  usuario:null,
+  vista:"dashboard",
+  examen:null,        // {seccion, lectura, respuestas[], inicio, restante, tabs}
+  resultados:{}       // lecturaId → {aciertos,total,pct,fecha}
+};
+const LETRAS = ["A","B","C","D","E"];
+const $ = s => document.querySelector(s);
+const main = $("#main");
+let timerId = null;
+
+/* ===================================================================
+   LOGIN
+   =================================================================== */
+$("#btn-google").addEventListener("click", () => {
+  const lista = $("#lista-cuentas");
+  lista.innerHTML = "";
+  CUENTAS.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "cuenta";
+    const ini = c.correo ? c.nombre.split(" ").map(p=>p[0]).slice(0,2).join("") : "+";
+    b.innerHTML = `
+      <div class="av" style="background:${c.color}">${ini}</div>
+      <div class="info"><b>${c.nombre}</b><span>${c.correo || "Iniciar sesión con otro correo"}</span></div>
+      ${c.rol ? `<span class="rol">${c.rol}</span>` : ""}`;
+    b.addEventListener("click", () => {
+      if(!c.correo){ alert("En la versión final aquí abriría el flujo real de Google Sign-In."); return; }
+      iniciarSesion(c);
+    });
+    lista.appendChild(b);
+  });
+  $("#modal-cuentas").classList.remove("oculto");
+});
+$("#btn-cancelar-modal").addEventListener("click", () => $("#modal-cuentas").classList.add("oculto"));
+$("#btn-salir").addEventListener("click", cerrarSesion);
+
+function iniciarSesion(c){
+  estado.usuario = c;
+  $("#modal-cuentas").classList.add("oculto");
+  $("#vista-login").classList.add("oculto");
+  $("#app").classList.remove("oculto");
+  $("#usuario-nombre").textContent = c.nombre;
+  $("#avatar-ini").textContent = c.nombre.split(" ").map(p=>p[0]).slice(0,2).join("");
+  $("#avatar-ini").style.background = c.color;
+  navegar(c.rol === "profesor" ? "profesor" : c.rol === "admin" ? "admin" : "dashboard");
+}
+function cerrarSesion(){
+  detenerReloj();
+  estado.usuario = null; estado.examen = null;
+  $("#app").classList.add("oculto");
+  $("#vista-login").classList.remove("oculto");
+  window.scrollTo(0,0);
+}
+
+/* ===================================================================
+   NAVEGACIÓN
+   =================================================================== */
+function navegar(vista, datos){
+  estado.vista = vista;
+  window.scrollTo(0,0);
+  if(vista === "dashboard") renderDashboard();
+  else if(vista === "examen") renderExamen(datos);
+  else if(vista === "resultados") renderResultados(datos);
+  else if(vista === "profesor") renderProfesor();
+  else if(vista === "admin") renderAdmin();
+}
+
+/* ===================================================================
+   DASHBOARD (alumno)
+   =================================================================== */
+function renderDashboard(){
+  detenerReloj();
+  const totalLecturas = SECCIONES.reduce((a,s)=>a+s.lecturas.length,0);
+  const totalReactivos = SECCIONES.reduce((a,s)=>a+s.lecturas.reduce((b,l)=>b+l.preguntas.length,0),0);
+
+  let html = `
+    <div class="encabezado">
+      <div>
+        <h1>Lecturas disponibles</h1>
+        <p>${totalLecturas} lecturas disponibles · ${totalReactivos} reactivos en total. Elige una lectura para practicar.</p>
+      </div>
+    </div>`;
+
+  SECCIONES.forEach(s => {
+    const n = s.lecturas.reduce((a,l)=>a+l.preguntas.length,0);
+    html += `
+      <section class="seccion">
+        <div class="seccion-cab">
+          <div>
+            <h2>${s.nombre}</h2>
+            <div class="meta">${s.academia}</div>
+          </div>
+          <div class="meta">${s.lecturas.length} lectura${s.lecturas.length>1?"s":""} · ${n} reactivos</div>
+        </div>
+        <div class="lecturas">`;
+    s.lecturas.forEach(l => {
+      const r = estado.resultados[l.id];
+      html += `
+          <div class="lectura">
+            <div>
+              <h3>${l.titulo}</h3>
+              <div class="datos">
+                <span>${l.preguntas.length} preguntas</span>
+                <span>${l.minutos} min</span>
+                <span>${l.preguntas[0].opciones.length} opciones</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px">
+              ${r ? `<span class="resultado ${r.pct>=60?"ok":"mal"}">${r.aciertos}/${r.total} · ${r.pct}%</span>` : ""}
+              <button class="btn ${r?"btn-borde":"btn-rojo"}" data-seccion="${s.id}" data-lectura="${l.id}">
+                ${r ? "Repetir" : "Iniciar"}
+              </button>
+            </div>
+          </div>`;
+    });
+    html += `</div></section>`;
+  });
+  main.innerHTML = html;
+  main.querySelectorAll("button[data-lectura]").forEach(b =>
+    b.addEventListener("click", () => iniciarExamen(b.dataset.seccion, b.dataset.lectura)));
+}
+
+/* ===================================================================
+   EXAMEN
+   =================================================================== */
+function iniciarExamen(secId, lecId){
+  const seccion = SECCIONES.find(s=>s.id===secId);
+  const lectura = seccion.lecturas.find(l=>l.id===lecId);
+  estado.examen = {
+    seccion, lectura,
+    respuestas: new Array(lectura.preguntas.length).fill(null),
+    restante: lectura.minutos*60,
+    cambiosPestana: 0
+  };
+  navegar("examen");
+}
+
+function renderExamen(){
+  const {seccion, lectura, respuestas} = estado.examen;
+  const numerar = lectura.numerar;
+  const romanos = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
+
+  let parrafos = lectura.parrafos.map((p,i) =>
+    `<p>${numerar ? `<span class="parr">[${romanos[i]}]</span>` : ""}${p}</p>`).join("");
+
+  let preguntas = lectura.preguntas.map((q,i) => `
+    <div class="pregunta" data-i="${i}">
+      <div class="enunciado"><span class="n">${i+1}</span><span>${q.enunciado}</span></div>
+      ${q.opciones.map((o,j)=>`
+        <label class="opcion ${respuestas[i]===j?"elegida":""}">
+          <input type="radio" name="q${i}" value="${j}" ${respuestas[i]===j?"checked":""}>
+          <span class="letra">${LETRAS[j]}</span><span>${o}</span>
+        </label>`).join("")}
+    </div>`).join("");
+
+  main.innerHTML = `
+    <div class="encabezado">
+      <div>
+        <h1>${lectura.titulo}</h1>
+        <p>${seccion.nombre} · ${lectura.preguntas.length} preguntas · ${lectura.minutos} minutos</p>
+      </div>
+      <button class="btn btn-suave" id="btn-volver">Salir sin enviar</button>
+    </div>
+    <div class="examen">
+      <aside class="panel-lectura">
+        <h2>${lectura.titulo}</h2>
+        <div class="fuente">${lectura.fuente}</div>
+        ${parrafos}
+      </aside>
+      <div class="panel-preguntas">
+        <div class="barra-progreso">
+          <span class="num" id="progreso-txt">0 / ${lectura.preguntas.length}</span>
+          <div class="pista"><i id="progreso-barra"></i></div>
+          <span class="reloj" id="reloj">--:--</span>
+        </div>
+        <div id="aviso-pestana" class="aviso oculto"></div>
+        ${preguntas}
+        <div class="acciones">
+          <button class="btn btn-rojo" id="btn-enviar">Enviar respuestas</button>
+        </div>
+      </div>
+    </div>`;
+
+  main.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener("change", e => {
+    const i = +e.target.name.slice(1), j = +e.target.value;
+    estado.examen.respuestas[i] = j;
+    const caja = main.querySelector(`.pregunta[data-i="${i}"]`);
+    caja.querySelectorAll(".opcion").forEach((o,k)=>o.classList.toggle("elegida",k===j));
+    caja.classList.remove("sin-responder");
+    actualizarProgreso();
+  }));
+  $("#btn-volver").addEventListener("click", () => {
+    if(confirm("¿Salir del examen? Se perderán tus respuestas.")) navegar("dashboard");
+  });
+  $("#btn-enviar").addEventListener("click", enviarExamen);
+
+  actualizarProgreso();
+  iniciarReloj();
+}
+
+function actualizarProgreso(){
+  const {respuestas} = estado.examen;
+  const c = respuestas.filter(r=>r!==null).length;
+  $("#progreso-txt").textContent = `${c} / ${respuestas.length}`;
+  $("#progreso-barra").style.width = (c/respuestas.length*100)+"%";
+}
+
+function iniciarReloj(){
+  detenerReloj();
+  const pintar = () => {
+    const t = estado.examen.restante;
+    const m = String(Math.floor(t/60)).padStart(2,"0"), s = String(t%60).padStart(2,"0");
+    const el = $("#reloj"); if(!el) return;
+    el.textContent = `${m}:${s}`;
+    el.classList.toggle("alerta", t <= 60);
+  };
+  pintar();
+  timerId = setInterval(() => {
+    estado.examen.restante--;
+    pintar();
+    if(estado.examen.restante <= 0){ detenerReloj(); enviarExamen(true); }
+  }, 1000);
+}
+function detenerReloj(){ if(timerId){ clearInterval(timerId); timerId=null; } }
+
+/* Detección básica de cambio de pestaña (anti-distracción, no anti-trampa real) */
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden && estado.vista==="examen" && estado.examen){
+    estado.examen.cambiosPestana++;
+    const av = $("#aviso-pestana");
+    if(av){
+      av.classList.remove("oculto");
+      av.textContent = `Saliste de la pestaña ${estado.examen.cambiosPestana} ${estado.examen.cambiosPestana===1?"vez":"veces"}. Esto quedará registrado en tu intento.`;
+    }
+  }
+});
+
+function enviarExamen(porTiempo=false){
+  const {respuestas} = estado.examen;
+  const faltan = respuestas.filter(r=>r===null).length;
+  if(!porTiempo && faltan>0){
+    main.querySelectorAll(".pregunta").forEach((p,i)=>p.classList.toggle("sin-responder",respuestas[i]===null));
+    if(!confirm(`Tienes ${faltan} pregunta${faltan>1?"s":""} sin responder. ¿Enviar de todos modos?`)) return;
+  }
+  detenerReloj();
+  navegar("resultados");
+}
+
+/* ===================================================================
+   RESULTADOS
+   =================================================================== */
+function renderResultados(){
+  const {seccion, lectura, respuestas, cambiosPestana} = estado.examen;
+  const total = lectura.preguntas.length;
+  let aciertos = 0;
+  const porHab = {};
+  lectura.preguntas.forEach((q,i)=>{
+    const ok = respuestas[i]===q.correcta;
+    if(ok) aciertos++;
+    porHab[q.habilidad] = porHab[q.habilidad] || {ok:0,n:0};
+    porHab[q.habilidad].n++; if(ok) porHab[q.habilidad].ok++;
+  });
+  const pct = Math.round(aciertos/total*100);
+  estado.resultados[lectura.id] = {aciertos,total,pct,fecha:new Date()};
+
+  const mensaje = pct>=90 ? "Excelente comprensión del texto." :
+                  pct>=70 ? "Buen resultado. Revisa los reactivos marcados." :
+                  pct>=60 ? "Aprobado, pero conviene repasar las habilidades más bajas." :
+                            "Revisa la retroalimentación de cada reactivo y vuelve a intentarlo.";
+
+  const habs = Object.entries(porHab).map(([h,v])=>`
+    <div class="hab ${v.ok===v.n?"perfecta":""}">
+      <div class="nombre">${h}</div>
+      <div class="frac">${v.ok}<small> / ${v.n}</small></div>
+      <div class="mini"><i style="width:${v.ok/v.n*100}%"></i></div>
+    </div>`).join("");
+
+  const revision = lectura.preguntas.map((q,i)=>`
+    <div class="pregunta">
+      <div class="enunciado"><span class="n">${i+1}</span><span>${q.enunciado}</span></div>
+      ${q.opciones.map((o,j)=>{
+        let cls = "";
+        if(j===q.correcta) cls="correcta";
+        else if(respuestas[i]===j) cls="incorrecta";
+        return `<div class="opcion ${cls}"><span class="letra">${LETRAS[j]}</span><span>${o}</span></div>`;
+      }).join("")}
+      <div class="justificacion">
+        <b>${q.habilidad}</b>
+        ${q.justificacion || (respuestas[i]===q.correcta
+          ? "Respuesta correcta."
+          : respuestas[i]===null ? "No respondiste este reactivo. La respuesta correcta era la opción " + LETRAS[q.correcta] + "."
+          : "La respuesta correcta era la opción " + LETRAS[q.correcta] + ".")}
+      </div>
+    </div>`).join("");
+
+  main.innerHTML = `
+    <div class="encabezado">
+      <div>
+        <h1>Resultados</h1>
+        <p>${lectura.titulo} · ${seccion.nombre}</p>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-borde" id="btn-repetir">Repetir lectura</button>
+        <button class="btn btn-rojo" id="btn-inicio">Volver al inicio</button>
+      </div>
+    </div>
+    <div class="resumen">
+      <div class="puntaje">${pct}<small>%</small></div>
+      <div>
+        <h2>${aciertos} de ${total} reactivos correctos</h2>
+        <p>${mensaje}${cambiosPestana ? ` · Saliste de la pestaña ${cambiosPestana} ${cambiosPestana===1?"vez":"veces"}.` : ""}</p>
+      </div>
+    </div>
+    <h2 style="font-size:18px;margin:0 0 12px">Desempeño por habilidad</h2>
+    <div class="habilidades">${habs}</div>
+    <h2 style="font-size:18px;margin:0 0 12px">Revisión de reactivos</h2>
+    <div class="panel-preguntas">${revision}</div>`;
+
+  $("#btn-repetir").addEventListener("click", () => iniciarExamen(seccion.id, lectura.id));
+  $("#btn-inicio").addEventListener("click", () => navegar("dashboard"));
+}
+
+/* ===================================================================
+   VISTA PROFESOR (placeholder — mostrará banco y resultados desde Firestore)
+   =================================================================== */
+function renderProfesor(){
+  detenerReloj();
+  let filas = "";
+  SECCIONES.forEach(s => s.lecturas.forEach(l => {
+    filas += `<tr>
+      <td>${s.nombre}</td><td>${l.titulo}</td>
+      <td class="num">${l.preguntas.length}</td><td class="num">${l.minutos}</td>
+      <td class="num">${l.preguntas[0].opciones.length}</td>
+    </tr>`;
+  }));
+  main.innerHTML = `
+    <div class="encabezado">
+      <div>
+        <h1>Banco de reactivos</h1>
+        <p>Vista de profesor. En la versión final aquí se editan lecturas y se consultan los resultados de los alumnos.</p>
+      </div>
+      <button class="btn btn-borde" id="btn-ver-alumno">Ver como alumno</button>
+    </div>
+    <table class="tabla">
+      <thead><tr><th>Sección</th><th>Lectura</th><th style="text-align:right">Reactivos</th><th style="text-align:right">Minutos</th><th style="text-align:right">Opciones</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <div class="aviso" style="margin-top:20px">
+      Próximamente: alta de lecturas desde un formulario, importación desde .docx y reporte de intentos por grupo.
+    </div>`;
+  $("#btn-ver-alumno").addEventListener("click", () => navegar("dashboard"));
+}
+/* ===================================================================
+   VISTA ADMIN (placeholder — gestión de academias, secciones y usuarios)
+   =================================================================== */
+function renderAdmin(){
+  detenerReloj();
+  let filas = "";
+  SECCIONES.forEach(s => {
+    const n = s.lecturas.reduce((a,l)=>a+l.preguntas.length,0);
+    filas += `<tr><td>${s.academia}</td><td>${s.nombre}</td>
+      <td class="num">${s.lecturas.length}</td><td class="num">${n}</td></tr>`;
+  });
+  const usuarios = CUENTAS.filter(c=>c.correo).map(c=>`
+    <tr><td>${c.nombre}</td><td>${c.correo}</td><td>${c.rol}</td></tr>`).join("");
+  main.innerHTML = `
+    <div class="encabezado">
+      <div>
+        <h1>Administración</h1>
+        <p>Vista de administrador. Aquí se gestionarán academias, secciones y roles de usuario.</p>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-borde" id="btn-ver-profesor">Ver como profesor</button>
+        <button class="btn btn-borde" id="btn-ver-alumno">Ver como alumno</button>
+      </div>
+    </div>
+    <h2 style="font-size:18px;margin:0 0 12px">Academias y secciones</h2>
+    <table class="tabla">
+      <thead><tr><th>Academia</th><th>Sección</th><th style="text-align:right">Lecturas</th><th style="text-align:right">Reactivos</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <h2 style="font-size:18px;margin:24px 0 12px">Usuarios y roles</h2>
+    <table class="tabla">
+      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th></tr></thead>
+      <tbody>${usuarios}</tbody>
+    </table>
+    <div class="aviso" style="margin-top:20px">
+      Próximamente: alta de academias y profesoras, asignación de secciones por academia y control de roles desde Firebase.
+    </div>`;
+  $("#btn-ver-profesor").addEventListener("click", () => navegar("profesor"));
+  $("#btn-ver-alumno").addEventListener("click", () => navegar("dashboard"));
+}
+</script>
+</body>
+</html>
