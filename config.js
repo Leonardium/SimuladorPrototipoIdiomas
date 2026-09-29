@@ -11,12 +11,12 @@
    ===================================================================== */
 
 export const firebaseConfig = {
-  apiKey: "PEGAR_AQUI",
+  apiKey: "AIzaSyA1s1el6hR8ydtH_df7rRRtSbJN_Kdtkfk",
   authDomain: "simulador-idiomas.firebaseapp.com",
   projectId: "simulador-idiomas",
-  storageBucket: "simulador-idiomas.appspot.com",
-  messagingSenderId: "PEGAR_AQUI",
-  appId: "PEGAR_AQUI"
+  storageBucket: "simulador-idiomas.firebasestorage.app",
+  messagingSenderId: "663632559992",
+  appId: "1:663632559992:web:b7b1f9fb972dad0868528d"
 };
 
 export const DOMINIO_ALUMNOS = "my.uvm.edu.mx";
