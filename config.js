@@ -1,0 +1,30 @@
+/* =====================================================================
+   CONFIGURACIÓN DEL SIMULADOR
+   ---------------------------------------------------------------------
+   1) firebaseConfig: cópialo de Firebase console →
+      Configuración del proyecto → Tus apps → App web → "Configuración del SDK".
+      Estos valores NO son secretos (van en cualquier página que use Firebase);
+      la seguridad la ponen las reglas de firestore.rules.
+   2) DOMINIO_ALUMNOS: cualquier cuenta de este dominio entra como alumno.
+   3) ADMINS: correos con permisos de administrador desde el primer día.
+      Deben coincidir con la lista ADMINS de firestore.rules.
+   ===================================================================== */
+
+export const firebaseConfig = {
+  apiKey: "PEGAR_AQUI",
+  authDomain: "simulador-idiomas.firebaseapp.com",
+  projectId: "simulador-idiomas",
+  storageBucket: "simulador-idiomas.appspot.com",
+  messagingSenderId: "PEGAR_AQUI",
+  appId: "PEGAR_AQUI"
+};
+
+export const DOMINIO_ALUMNOS = "my.uvm.edu.mx";
+
+export const ADMINS = [
+  "guillermo_penaq@my.uvm.edu.mx",
+  "leonardo.peq@gmail.com"
+];
+
+/* Nombre que aparece al pie del login */
+export const AUTOR = "G. Leonardo Peña Quintal";

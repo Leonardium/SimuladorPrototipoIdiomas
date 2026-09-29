@@ -1,0 +1,138 @@
+rules_version = '2';
+
+// =====================================================================
+// Reglas de seguridad · Simulador de Comprensión Lectora (Idiomas UVM)
+// ---------------------------------------------------------------------
+// Antes de publicar, ajusta ADMINS y DOMINIO para que coincidan con config.js.
+// Publicar: Firebase console → Firestore Database → Reglas → pegar → Publicar
+//           (o `firebase deploy --only firestore:rules`).
+// =====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Configuración ----------
+    function ADMINS() { return ['guillermo_penaq@my.uvm.edu.mx', 'leonardo.peq@gmail.com']; }
+    function DOMINIO() { return 'my.uvm.edu.mx'; }
+    // Segundos de tolerancia después del tiempo límite para guardar respuestas
+    function TOLERANCIA_SEG() { return 120; }
+
+    // ---------- Identidad ----------
+    function autenticado() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function correo() { return request.auth.token.email.lower(); }
+    function rutaRol() { return /databases/$(database)/documents/roles/$(correo()); }
+    function rolGuardado() {
+      return exists(rutaRol()) ? get(rutaRol()).data.rol : '';
+    }
+    function esAdmin() {
+      return autenticado() && (correo() in ADMINS() || rolGuardado() == 'admin');
+    }
+    function esStaff() {
+      return autenticado() && (correo() in ADMINS() || rolGuardado() in ['admin', 'profesor']);
+    }
+    function esAlumno() {
+      return autenticado() && correo().split('@')[1] == DOMINIO();
+    }
+
+    // ---------- Roles (profesoras y admins) ----------
+    // Doc id = correo en minúsculas. { rol: 'profesor' | 'admin', nombre }
+    match /roles/{email} {
+      allow read: if autenticado() && (email == correo() || esStaff());
+      allow write: if esAdmin()
+        && (request.method == 'delete'
+            || (request.resource.data.rol in ['profesor', 'admin']
+                && request.resource.data.keys().hasOnly(['rol', 'nombre', 'agregado'])));
+    }
+
+    // ---------- Configuración general (lista de grupos) ----------
+    match /config/{doc} {
+      allow read: if autenticado();
+      allow write: if esStaff();
+    }
+
+    // ---------- Perfil de alumno ----------
+    // Doc id = uid. El alumno lo crea una vez; solo el staff lo modifica después.
+    match /alumnos/{uid} {
+      allow read: if autenticado() && (request.auth.uid == uid || esStaff());
+      allow create: if esAlumno()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'correo', 'grupo', 'creado'])
+        && request.resource.data.correo == correo()
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0
+        && request.resource.data.nombre.size() <= 120
+        && request.resource.data.grupo is string
+        && request.resource.data.creado == request.time;
+      allow update, delete: if esStaff();
+    }
+
+    // ---------- Lecturas (sin respuestas correctas) ----------
+    match /lecturas/{id} {
+      allow read: if esStaff() || (esAlumno() && resource.data.activa == true);
+      allow write: if esStaff();
+    }
+
+    // ---------- Claves de respuesta ----------
+    // Solo el staff; el alumno puede leerla únicamente DESPUÉS de enviar su intento
+    // y si la lectura tiene activado "mostrar resultados".
+    match /claves/{id} {
+      function rutaIntento() {
+        return /databases/$(database)/documents/intentos/$(id + '__' + request.auth.uid);
+      }
+      allow read: if esStaff()
+        || (esAlumno()
+            && exists(rutaIntento())
+            && get(rutaIntento()).data.estado == 'enviado'
+            && get(/databases/$(database)/documents/lecturas/$(id)).data.get('mostrarResultados', true) == true);
+      allow write: if esStaff();
+    }
+
+    // ---------- Intentos ----------
+    // Doc id = <lecturaId>__<uid>  → un solo intento por alumno y lectura.
+    // Solo se guardan las respuestas; la calificación se calcula comparando con la clave,
+    // así que no se puede falsificar el puntaje.
+    match /intentos/{iid} {
+      allow get: if esStaff() || (autenticado() && iid.split('__')[1] == request.auth.uid);
+      allow list: if esStaff() || (autenticado() && resource.data.uid == request.auth.uid);
+
+      allow create: if esAlumno()
+        && iid == request.resource.data.lecturaId + '__' + request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'uid', 'lecturaId', 'correo', 'nombre', 'grupo', 'estado',
+             'inicio', 'fin', 'respuestas', 'cambiosPestana', 'minutos', 'totalPreguntas'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.correo == correo()
+        && request.resource.data.estado == 'en_curso'
+        && request.resource.data.inicio == request.time
+        && request.resource.data.fin == null
+        && request.resource.data.cambiosPestana == 0
+        && request.resource.data.respuestas is list
+        && request.resource.data.respuestas.size() == request.resource.data.totalPreguntas
+        && get(/databases/$(database)/documents/lecturas/$(request.resource.data.lecturaId)).data.activa == true
+        && get(/databases/$(database)/documents/lecturas/$(request.resource.data.lecturaId)).data.minutos == request.resource.data.minutos
+        && get(/databases/$(database)/documents/lecturas/$(request.resource.data.lecturaId)).data.preguntas.size() == request.resource.data.totalPreguntas;
+
+      allow update: if autenticado()
+        && resource.data.uid == request.auth.uid
+        && resource.data.estado == 'en_curso'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['respuestas', 'estado', 'fin', 'cambiosPestana'])
+        && request.resource.data.respuestas is list
+        && request.resource.data.respuestas.size() == resource.data.totalPreguntas
+        && request.resource.data.cambiosPestana is int
+        && request.resource.data.cambiosPestana >= resource.data.cambiosPestana
+        && (request.resource.data.estado == 'en_curso'
+            || (request.resource.data.estado == 'enviado' && request.resource.data.fin == request.time))
+        // Pasado el tiempo límite (+ tolerancia) ya no se pueden cambiar respuestas, solo cerrar el intento
+        && (request.time <= resource.data.inicio + duration.value(resource.data.minutos * 60 + TOLERANCIA_SEG(), 's')
+            || request.resource.data.respuestas == resource.data.respuestas);
+
+      // El staff puede borrar un intento para dar otra oportunidad
+      allow delete: if esStaff();
+    }
+  }
+}
