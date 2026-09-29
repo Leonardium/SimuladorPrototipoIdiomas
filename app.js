@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=3";
+import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=4";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -168,12 +168,11 @@ onAuthStateChanged(auth, async user => {
   try {
     const correo = minus(user.email);
     let rol = null;
+    const r = await getDoc(doc(db, "roles", correo));
+    estado.miNombre = (r.exists() && r.data().nombre) || user.displayName || correo;
     if (ADMINS.map(minus).includes(correo)) rol = "admin";
-    else {
-      const r = await getDoc(doc(db, "roles", correo));
-      if (r.exists()) rol = r.data().rol === "admin" ? "admin" : "profesor";
-      else if (correo.split("@")[1] === minus(DOMINIO_ALUMNOS)) rol = "alumno";
-    }
+    else if (r.exists()) rol = r.data().rol === "admin" ? "admin" : "profesor";
+    else if (correo.split("@")[1] === minus(DOMINIO_ALUMNOS)) rol = "alumno";
     if (!rol) {
       await signOut(auth);
       mostrar("#vista-login");
@@ -183,6 +182,7 @@ onAuthStateChanged(auth, async user => {
     estado.rol = rol;
     const cfg = await getDoc(doc(db, "config", "general"));
     estado.config = cfg.exists() ? { grupos: [], ...cfg.data() } : { grupos: [] };
+    if (!Array.isArray(estado.config.grupos)) estado.config.grupos = [];
 
     pintarBarra();
     mostrar("#app");
@@ -203,7 +203,7 @@ onAuthStateChanged(auth, async user => {
 
 function pintarBarra() {
   const u = estado.user;
-  const nombre = estado.perfil?.nombre || u.displayName || u.email;
+  const nombre = estado.perfil?.nombre || (estado.rol !== "alumno" && estado.miNombre) || u.displayName || u.email;
   $("#usuario-nombre").textContent = nombre;
   $("#avatar-ini").textContent = iniciales(nombre);
   $("#avatar-ini").style.background = estado.rol === "alumno" ? "var(--rojo)" : "#4A4A4A";
@@ -248,11 +248,30 @@ function navegar(vista, datos) {
 }
 
 /* ===================================================================
+   GRUPOS Y PROFESORAS
+   config/general.grupos = [{nombre, profe (correo), profeNombre}]
+   =================================================================== */
+function gruposCfg() {
+  return (estado.config.grupos || []).map(g => typeof g === "string"
+    ? { nombre: g, profe: "", profeNombre: "" }
+    : { nombre: g.nombre || "", profe: minus(g.profe), profeNombre: g.profeNombre || "" }).filter(g => g.nombre);
+}
+function profesDeGrupos() {
+  const m = new Map();
+  gruposCfg().forEach(g => { if (g.profe && !m.has(g.profe)) m.set(g.profe, g.profeNombre || g.profe); });
+  return [...m.entries()].map(([correo, nombre]) => ({ correo, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+}
+const soyProfe = () => estado.rol === "profesor";
+const miCorreo = () => minus(estado.user?.email);
+
+/* ===================================================================
    PERFIL DEL ALUMNO (primera vez)
    =================================================================== */
 function renderPerfil() {
   const u = estado.user;
-  const grupos = estado.config.grupos || [];
+  const grupos = gruposCfg();
+  const profes = profesDeGrupos();
+  const sinProfe = grupos.filter(g => !g.profe);
   main.innerHTML = `
     <div class="encabezado"><div>
       <h1>Bienvenido</h1>
@@ -263,21 +282,35 @@ function renderPerfil() {
         <input type="text" id="p-nombre" maxlength="120" value="${esc(u.displayName || "")}" autocomplete="name"></div>
       <div class="campo"><span class="lbl">Correo · matrícula</span>
         <div>${esc(u.email)} · <b>${esc(matricula(u.email))}</b></div></div>
+      ${profes.length ? `
+      <div class="campo"><label for="p-profe">Profesora</label>
+        <select id="p-profe"><option value="">Elige a tu profesora…</option>${profes.map(p => `<option value="${esc(p.correo)}">${esc(p.nombre)}</option>`).join("")}${sinProfe.length ? `<option value="__otro">Otro grupo</option>` : ""}</select></div>` : ""}
       <div class="campo"><label for="p-grupo">Grupo</label>
         ${grupos.length
-          ? `<select id="p-grupo"><option value="">Elige tu grupo…</option>${grupos.map(g => `<option>${esc(g)}</option>`).join("")}</select>`
+          ? `<select id="p-grupo" ${profes.length ? "disabled" : ""}><option value="">${profes.length ? "Primero elige a tu profesora" : "Elige tu grupo…"}</option>${profes.length ? "" : grupos.map(g => `<option>${esc(g.nombre)}</option>`).join("")}</select>`
           : `<input type="text" id="p-grupo" maxlength="60" placeholder="Ej. Inglés A2 – Grupo 1">`}
         <small>Solo tu profesora puede cambiarlo después.</small></div>
       <button class="btn btn-rojo" id="p-guardar">Continuar</button>
     </div>`;
+  $("#p-profe")?.addEventListener("change", e => {
+    const v = e.target.value;
+    const lista = v === "__otro" ? sinProfe : grupos.filter(g => g.profe === v);
+    const sel = $("#p-grupo");
+    sel.disabled = !v;
+    sel.innerHTML = `<option value="">${v ? "Elige tu grupo…" : "Primero elige a tu profesora"}</option>` + lista.map(g => `<option>${esc(g.nombre)}</option>`).join("");
+    if (lista.length === 1) sel.value = lista[0].nombre;
+  });
   $("#p-guardar").addEventListener("click", async () => {
     const nombre = $("#p-nombre").value.trim().replace(/\s+/g, " ");
     const grupo = $("#p-grupo").value.trim();
+    const pv = $("#p-profe")?.value || "";
+    const profe = pv === "__otro" ? "" : pv;
     if (!nombre) return avisar("Falta tu nombre", "Escribe tu nombre completo.");
+    if (profes.length && !pv) return avisar("Falta tu profesora", "Elige a tu profesora.");
     if (!grupo) return avisar("Falta tu grupo", "Elige o escribe tu grupo.");
     $("#p-guardar").disabled = true;
     const ok = await conError(async () => {
-      const datos = { nombre, correo: minus(u.email), grupo, creado: serverTimestamp() };
+      const datos = { nombre, correo: minus(u.email), grupo, profe, creado: serverTimestamp() };
       await setDoc(doc(db, "alumnos", u.uid), datos);
       estado.perfil = datos;
       return true;
@@ -431,6 +464,7 @@ async function iniciarExamen(lectura, intentoPrevio) {
         uid, lecturaId: lectura.id, correo: minus(estado.user.email),
         nombre: estado.perfil?.nombre || estado.user.displayName || "",
         grupo: estado.perfil?.grupo || "",
+        profe: estado.perfil?.profe || "",
         estado: "en_curso", inicio: serverTimestamp(), fin: null,
         respuestas: new Array(lectura.preguntas.length).fill(null),
         cambiosPestana: 0, minutos: lectura.minutos, totalPreguntas: lectura.preguntas.length,
@@ -809,7 +843,7 @@ async function cargarEjemplos() {
     "Se agregarán las 6 lecturas del prototipo (cerradas, para que las revises antes de abrirlas). Si ya existen, se sobrescriben.", "Cargar");
   if (!ok) return;
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=3");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=4");
     const batch = writeBatch(db);
     LECTURAS_EJEMPLO.forEach(l => {
       batch.set(doc(db, "lecturas", l.id), {
@@ -1196,7 +1230,7 @@ async function eliminarLectura() {
 /* ===================================================================
    STAFF · RESULTADOS
    =================================================================== */
-const filtros = { lecturaId: "", grupo: "" };
+const filtros = { lecturaId: "", grupo: "", profe: "" };
 
 async function renderStaffResultados(volver) {
   if (volver) Object.assign(filtros, volver);
@@ -1214,7 +1248,16 @@ async function renderStaffResultados(volver) {
     return { ls, alumnos, claves, intentos };
   });
   if (!datos || estado.vista !== "staff-resultados") return;
-  const { ls, alumnos, claves, intentos } = datos;
+  const { ls, alumnos, claves } = datos;
+  const profeDe = it => minus(alumnos[it.uid]?.profe ?? it.profe ?? "");
+  // La profesora solo ve a sus alumnos; el admin puede filtrar por profesora
+  const intentos = datos.intentos.filter(it => soyProfe() ? profeDe(it) === miCorreo()
+    : !filtros.profe ? true : filtros.profe === "__sin" ? !profeDe(it) : profeDe(it) === filtros.profe);
+  const profesFiltro = (() => {
+    const m = new Map(profesDeGrupos().map(p => [p.correo, p.nombre]));
+    datos.intentos.forEach(it => { const p = profeDe(it); if (p && !m.has(p)) m.set(p, p); });
+    return [...m.entries()].map(([correo, nombre]) => ({ correo, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  })();
 
   if (!filtros.lecturaId || !ls.find(l => l.id === filtros.lecturaId)) {
     // Por defecto: la lectura con intentos más recientes
@@ -1225,7 +1268,10 @@ async function renderStaffResultados(volver) {
   const clave = lectura ? claves[lectura.id] : null;
   const grupoDe = it => alumnos[it.uid]?.grupo || it.grupo || "";
   const nombreDe = it => alumnos[it.uid]?.nombre || it.nombre || it.correo;
-  const grupos = [...new Set([...(estado.config.grupos || []), ...intentos.map(grupoDe), ...Object.values(alumnos).map(a => a.grupo)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const profeNombreDe = it => { const p = profeDe(it); return p ? (profesFiltro.find(x => x.correo === p)?.nombre || p) : ""; };
+  const profeGrupos = soyProfe() ? miCorreo() : filtros.profe && filtros.profe !== "__sin" ? filtros.profe : null;
+  const grupos = [...new Set([...gruposCfg().filter(g => profeGrupos == null || g.profe === profeGrupos).map(g => g.nombre), ...intentos.map(grupoDe)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  if (filtros.grupo && !grupos.includes(filtros.grupo)) filtros.grupo = "";
 
   let filas = intentos
     .filter(it => it.lecturaId === filtros.lecturaId)
@@ -1266,7 +1312,7 @@ async function renderStaffResultados(volver) {
 
   main.innerHTML = `
     <div class="encabezado">
-      <div><h1>Resultados</h1><p>La calificación se calcula con la clave vigente de cada lectura.</p></div>
+      <div><h1>Resultados</h1><p>${soyProfe() ? "Resultados de tus grupos. " : ""}La calificación se calcula con la clave vigente de cada lectura.</p></div>
       <div class="fila-acciones">
         <button class="btn btn-borde" id="btn-csv" ${filas.length ? "" : "disabled"}>Descargar esta lectura (Excel)</button>
         <button class="btn btn-suave" id="btn-csv-todo" ${intentos.length ? "" : "disabled"}>Descargar todo</button>
@@ -1276,6 +1322,8 @@ async function renderStaffResultados(volver) {
       <div class="en-linea">
         <div class="campo" style="margin:0"><label for="f-lectura">Lectura</label>
           <select id="f-lectura">${ls.map(l => `<option value="${esc(l.id)}" ${l.id === filtros.lecturaId ? "selected" : ""}>${esc(l.titulo)} — ${esc(l.seccion)}</option>`).join("")}</select></div>
+        ${soyProfe() ? "" : `<div class="campo" style="margin:0"><label for="f-profe">Profesora</label>
+          <select id="f-profe"><option value="">Todas</option>${profesFiltro.map(p => `<option value="${esc(p.correo)}" ${p.correo === filtros.profe ? "selected" : ""}>${esc(p.nombre)}</option>`).join("")}<option value="__sin" ${filtros.profe === "__sin" ? "selected" : ""}>Sin profesora asignada</option></select></div>`}
         <div class="campo" style="margin:0"><label for="f-grupo">Grupo</label>
           <select id="f-grupo"><option value="">Todos los grupos</option>${grupos.map(g => `<option ${g === filtros.grupo ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div>
       </div>
@@ -1295,6 +1343,7 @@ async function renderStaffResultados(volver) {
 
   $("#f-lectura")?.addEventListener("change", e => { filtros.lecturaId = e.target.value; renderStaffResultados(); });
   $("#f-grupo")?.addEventListener("change", e => { filtros.grupo = e.target.value; renderStaffResultados(); });
+  $("#f-profe")?.addEventListener("change", e => { filtros.profe = e.target.value; filtros.grupo = ""; renderStaffResultados(); });
   main.querySelectorAll("[data-ver]").forEach(b => b.addEventListener("click", () => {
     const f = filas[+b.dataset.ver];
     navegar("resultados", { lectura, respuestas: f.it.respuestas, clave, cambiosPestana: f.it.cambiosPestana, modo: "staff",
@@ -1308,9 +1357,9 @@ async function renderStaffResultados(volver) {
     if (r !== undefined) { toast("Intento reiniciado"); renderStaffResultados(); }
   }));
   $("#btn-csv")?.addEventListener("click", () => {
-    const encab = ["Lectura", "Sección", "Alumno", "Correo", "Matrícula", "Grupo", "Estado", "Aciertos", "Total", "Porcentaje", "Inicio", "Fin", "Duración (min)", "Salidas de pestaña", "Tarde"]
+    const encab = ["Lectura", "Sección", "Alumno", "Correo", "Matrícula", "Grupo", "Profesora", "Estado", "Aciertos", "Total", "Porcentaje", "Inicio", "Fin", "Duración (min)", "Salidas de pestaña", "Tarde"]
       .concat(lectura.preguntas.map((_, i) => `P${i + 1}`));
-    const rows = filas.map(f => [lectura.titulo, lectura.seccion, f.nombre, f.it.correo, matricula(f.it.correo), f.grupo,
+    const rows = filas.map(f => [lectura.titulo, lectura.seccion, f.nombre, f.it.correo, matricula(f.it.correo), f.grupo, profeNombreDe(f.it),
       f.it.estado === "enviado" ? "Enviado" : "En curso", f.c?.aciertos ?? "", f.c?.total ?? lectura.preguntas.length, f.c ? f.c.pct : "",
       fechaCSV(f.it.inicio), fechaCSV(f.it.fin), f.dur ?? "", f.it.cambiosPestana || 0, f.tarde ? "Sí" : ""]
       .concat(lectura.preguntas.map((_, i) => {
@@ -1322,14 +1371,14 @@ async function renderStaffResultados(volver) {
   });
   $("#btn-csv-todo")?.addEventListener("click", () => {
     const porId = Object.fromEntries(ls.map(l => [l.id, l]));
-    const encab = ["Lectura", "Sección", "Alumno", "Correo", "Matrícula", "Grupo", "Estado", "Aciertos", "Total", "Porcentaje", "Inicio", "Fin", "Duración (min)", "Salidas de pestaña"];
+    const encab = ["Lectura", "Sección", "Alumno", "Correo", "Matrícula", "Grupo", "Profesora", "Estado", "Aciertos", "Total", "Porcentaje", "Inicio", "Fin", "Duración (min)", "Salidas de pestaña"];
     const rows = intentos
       .filter(it => !filtros.grupo || grupoDe(it) === filtros.grupo)
       .map(it => {
         const l = porId[it.lecturaId];
         const c = l && claves[l.id] && it.estado === "enviado" ? calificar(l, it.respuestas, claves[l.id]) : null;
         const dur = it.fin && it.inicio ? Math.round((ms(it.fin) - ms(it.inicio)) / 60000) : "";
-        return [l?.titulo || it.lecturaId, l?.seccion || "", nombreDe(it), it.correo, matricula(it.correo), grupoDe(it),
+        return [l?.titulo || it.lecturaId, l?.seccion || "", nombreDe(it), it.correo, matricula(it.correo), grupoDe(it), profeNombreDe(it),
           it.estado === "enviado" ? "Enviado" : "En curso", c?.aciertos ?? "", c?.total ?? "", c ? c.pct : "",
           fechaCSV(it.inicio), fechaCSV(it.fin), dur, it.cambiosPestana || 0];
       })
@@ -1364,37 +1413,47 @@ async function renderStaffGrupos() {
       getDoc(doc(db, "config", "general")),
     ]);
     estado.config = cfg.exists() ? { grupos: [], ...cfg.data() } : { grupos: [] };
+    if (!Array.isArray(estado.config.grupos)) estado.config.grupos = [];
     return {
-      alumnos: as.docs.map(d => ({ uid: d.id, ...d.data() })).sort((a, b) => (a.grupo || "").localeCompare(b.grupo || "", "es") || (a.nombre || "").localeCompare(b.nombre || "", "es")),
+      alumnos: as.docs.map(d => ({ uid: d.id, ...d.data() })),
       roles: rs ? rs.docs.map(d => ({ correo: d.id, ...d.data() })) : [],
     };
   });
   if (!datos || estado.vista !== "staff-grupos") return;
-  const { alumnos, roles } = datos;
-  const grupos = estado.config.grupos || [];
-  const todosGrupos = [...new Set([...grupos, ...alumnos.map(a => a.grupo)].filter(Boolean))];
+  const { roles } = datos;
+  const todos = gruposCfg();
+
+  // Profesoras disponibles para asignar grupos (solo admin elige)
+  const profes = new Map();
+  roles.forEach(r => profes.set(minus(r.correo), r.nombre || r.correo));
+  todos.forEach(g => { if (g.profe && !profes.has(g.profe)) profes.set(g.profe, g.profeNombre || g.profe); });
+  if (esAdmin) profes.set(miCorreo(), estado.miNombre || miCorreo());
+  const listaProfes = [...profes.entries()].map(([correo, nombre]) => ({ correo, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  const nombreProfe = c => c ? (profes.get(c) || todos.find(g => g.profe === c)?.profeNombre || c) : "Sin profesora";
+
+  const grupos = soyProfe() ? todos.filter(g => g.profe === miCorreo()) : todos;
+  const alumnos = datos.alumnos
+    .filter(a => !soyProfe() || minus(a.profe) === miCorreo())
+    .sort((a, b) => nombreProfe(minus(a.profe)).localeCompare(nombreProfe(minus(b.profe)), "es") || (a.grupo || "").localeCompare(b.grupo || "", "es") || (a.nombre || "").localeCompare(b.nombre || "", "es"));
+
+  // Opciones "profe|grupo" para reasignar alumnos
+  const opcionesGrupo = soyProfe() ? grupos : todos;
+  const claveG = (p, g) => `${minus(p)}|${g}`;
 
   main.innerHTML = `
     <div class="encabezado"><div>
-      <h1>${esAdmin ? "Grupos y usuarios" : "Grupos y alumnos"}</h1>
-      <p>Los alumnos entran con su cuenta @${esc(DOMINIO_ALUMNOS)} y eligen su grupo la primera vez.</p>
+      <h1>${esAdmin ? "Grupos y usuarios" : "Mis grupos y alumnos"}</h1>
+      <p>Los alumnos entran con su cuenta @${esc(DOMINIO_ALUMNOS)} y la primera vez eligen a su profesora y su grupo.</p>
     </div></div>
-
-    <div class="tarjeta">
-      <h2>Grupos</h2>
-      <p style="margin:0 0 12px;font-size:14px;color:var(--gris-texto)">Estos son los grupos que el alumno puede elegir. Si no hay ninguno, el alumno escribe el suyo.</p>
-      <ul class="lista-simple">${grupos.map((g, i) => `<li><span>${esc(g)}</span><button class="btn btn-suave btn-chico" data-quitar-g="${i}">Quitar</button></li>`).join("") || `<li style="color:var(--gris-texto)">Sin grupos definidos</li>`}</ul>
-      <div class="en-linea"><input type="text" id="g-nuevo" maxlength="60" placeholder="Ej. Inglés A2 – Grupo 1"><button class="btn btn-rojo" id="g-agregar">Agregar grupo</button></div>
-    </div>
 
     ${esAdmin ? `
     <div class="tarjeta">
       <h2>Profesoras y administradores</h2>
-      <p style="margin:0 0 12px;font-size:14px;color:var(--gris-texto)">Solo estas cuentas ven el panel. Los admins de config.js (${ADMINS.map(esc).join(", ")}) siempre tienen acceso.</p>
+      <p style="margin:0 0 12px;font-size:14px;color:var(--gris-texto)">Solo estas cuentas ven el panel. Cada profesora ve únicamente sus grupos y resultados. Los admins de config.js (${ADMINS.map(esc).join(", ")}) siempre tienen acceso.</p>
       <ul class="lista-simple">${roles.map(r => `<li><span><b>${esc(r.nombre || r.correo)}</b> · ${esc(r.correo)} · <span class="chip ${r.rol === "admin" ? "rojo" : "gris"}">${r.rol === "admin" ? "Admin" : "Profesora"}</span></span>
         <button class="btn btn-suave btn-chico" data-quitar-r="${esc(r.correo)}">Quitar</button></li>`).join("") || `<li style="color:var(--gris-texto)">Aún no hay profesoras registradas</li>`}</ul>
       <div class="en-linea">
-        <input type="text" id="r-nombre" placeholder="Nombre">
+        <input type="text" id="r-nombre" placeholder="Nombre (como lo verán los alumnos)">
         <input type="email" id="r-correo" placeholder="correo@${esc(DOMINIO_ALUMNOS)}">
         <select id="r-rol" style="flex:0 0 150px"><option value="profesor">Profesora</option><option value="admin">Admin</option></select>
         <button class="btn btn-rojo" id="r-agregar">Agregar</button>
@@ -1402,14 +1461,31 @@ async function renderStaffGrupos() {
     </div>` : ""}
 
     <div class="tarjeta">
-      <h2>Alumnos registrados (${alumnos.length})</h2>
+      <h2>${soyProfe() ? "Mis grupos" : "Grupos"}</h2>
+      <p style="margin:0 0 12px;font-size:14px;color:var(--gris-texto)">El alumno elige primero a su profesora y luego uno de estos grupos.</p>
+      <ul class="lista-simple">${grupos.map(g => `<li><span><b>${esc(g.nombre)}</b>${soyProfe() ? "" : ` · <span style="color:var(--gris-texto)">${esc(nombreProfe(g.profe))}</span>`}</span>
+        <button class="btn btn-suave btn-chico" data-quitar-g="${esc(claveG(g.profe, g.nombre))}">Quitar</button></li>`).join("") || `<li style="color:var(--gris-texto)">Sin grupos todavía</li>`}</ul>
+      <div class="en-linea">
+        <input type="text" id="g-nuevo" maxlength="60" placeholder="Ej. Inglés A2 – Grupo 1">
+        ${esAdmin ? `<select id="g-profe" style="flex:0 0 220px">${listaProfes.map(p => `<option value="${esc(p.correo)}">${esc(p.nombre)}</option>`).join("")}</select>` : ""}
+        <button class="btn btn-rojo" id="g-agregar">Agregar grupo</button>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <h2>${soyProfe() ? "Mis alumnos" : "Alumnos registrados"} (${alumnos.length})</h2>
       ${alumnos.length ? `<div class="tabla-envoltura"><table class="tabla">
-        <thead><tr><th>Alumno</th><th>Matrícula</th><th>Grupo</th></tr></thead>
-        <tbody>${alumnos.map((a, i) => `<tr>
+        <thead><tr><th>Alumno</th><th>Matrícula</th>${soyProfe() ? "" : "<th>Profesora</th>"}<th>Grupo</th></tr></thead>
+        <tbody>${alumnos.map((a, i) => {
+          const actual = claveG(a.profe || "", a.grupo || "");
+          const ops = opcionesGrupo.map(g => ({ v: claveG(g.profe, g.nombre), t: soyProfe() ? g.nombre : `${g.nombre} · ${nombreProfe(g.profe)}` }));
+          if (!ops.some(o => o.v === actual)) ops.unshift({ v: actual, t: soyProfe() ? (a.grupo || "—") : `${a.grupo || "—"} · ${nombreProfe(minus(a.profe))}` });
+          return `<tr>
           <td><b>${esc(a.nombre)}</b><span class="sub">${esc(a.correo)}</span></td>
           <td>${esc(matricula(a.correo))}</td>
-          <td><select data-alumno="${i}" style="min-width:180px">${[...new Set([a.grupo, ...todosGrupos])].filter(Boolean).map(g => `<option ${g === a.grupo ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></td>
-        </tr>`).join("")}</tbody></table></div>` : `<div class="vacio">Todavía no ha entrado ningún alumno.</div>`}
+          ${soyProfe() ? "" : `<td>${esc(nombreProfe(minus(a.profe)))}</td>`}
+          <td><select data-alumno="${i}" style="min-width:200px">${ops.map(o => `<option value="${esc(o.v)}" ${o.v === actual ? "selected" : ""}>${esc(o.t)}</option>`).join("")}</select></td>
+        </tr>`; }).join("")}</tbody></table></div>` : `<div class="vacio">${soyProfe() ? "Todavía no se ha registrado ningún alumno en tus grupos." : "Todavía no ha entrado ningún alumno."}</div>`}
     </div>`;
 
   const guardarGrupos = async lista => {
@@ -1417,19 +1493,24 @@ async function renderStaffGrupos() {
     if (r !== undefined) { estado.config.grupos = lista; renderStaffGrupos(); }
   };
   $("#g-agregar").addEventListener("click", () => {
-    const g = $("#g-nuevo").value.trim().replace(/\s+/g, " ");
-    if (!g) return;
-    if (grupos.includes(g)) return toast("Ese grupo ya existe");
-    guardarGrupos([...grupos, g]);
+    const nombre = $("#g-nuevo").value.trim().replace(/\s+/g, " ");
+    if (!nombre) return;
+    const profe = esAdmin ? ($("#g-profe")?.value || miCorreo()) : miCorreo();
+    if (todos.some(g => g.profe === profe && g.nombre === nombre)) return toast("Ese grupo ya existe");
+    guardarGrupos([...todos, { nombre, profe, profeNombre: esAdmin ? nombreProfe(profe) : (estado.miNombre || profe) }]);
   });
   $("#g-nuevo").addEventListener("keydown", e => { if (e.key === "Enter") $("#g-agregar").click(); });
-  main.querySelectorAll("[data-quitar-g]").forEach(b => b.addEventListener("click", () =>
-    guardarGrupos(grupos.filter((_, i) => i !== +b.dataset.quitarG))));
+  main.querySelectorAll("[data-quitar-g]").forEach(b => b.addEventListener("click", async () => {
+    const [p, ...rest] = b.dataset.quitarG.split("|"); const n = rest.join("|");
+    const ok = await confirmar("¿Quitar grupo?", `"${n}" ya no aparecerá para nuevos alumnos. Los alumnos que ya están en él no cambian.`, "Quitar");
+    if (ok) guardarGrupos(todos.filter(g => !(g.profe === p && g.nombre === n)));
+  }));
 
   main.querySelectorAll("[data-alumno]").forEach(s => s.addEventListener("change", async () => {
     const a = alumnos[+s.dataset.alumno];
-    const r = await conError(() => updateDoc(doc(db, "alumnos", a.uid), { grupo: s.value }));
-    if (r !== undefined) { a.grupo = s.value; toast(`${a.nombre} → ${s.value}`); }
+    const [profe, ...rest] = s.value.split("|"); const grupo = rest.join("|");
+    const r = await conError(() => updateDoc(doc(db, "alumnos", a.uid), { grupo, profe }));
+    if (r !== undefined) { a.grupo = grupo; a.profe = profe; toast(`${a.nombre} → ${grupo}`); if (soyProfe() && profe !== miCorreo()) renderStaffGrupos(); }
   }));
 
   if (esAdmin) {
@@ -1438,12 +1519,13 @@ async function renderStaffGrupos() {
       const nombre = $("#r-nombre").value.trim();
       const rol = $("#r-rol").value;
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return avisar("Correo inválido", "Escribe el correo completo de la profesora.");
+      if (!nombre) return avisar("Falta el nombre", "Escribe el nombre como lo verán los alumnos (ej. Miss Ana López).");
       const r = await conError(() => setDoc(doc(db, "roles", correo), { rol, nombre, agregado: serverTimestamp() }));
       if (r !== undefined) { toast("Acceso agregado"); renderStaffGrupos(); }
     });
     main.querySelectorAll("[data-quitar-r]").forEach(b => b.addEventListener("click", async () => {
       const correo = b.dataset.quitarR;
-      if (correo === minus(estado.user.email)) return avisar("No puedes quitarte a ti", "Pídele a otro admin que lo haga.");
+      if (correo === miCorreo()) return avisar("No puedes quitarte a ti", "Pídele a otro admin que lo haga.");
       if (!await confirmar("¿Quitar acceso?", `${correo} ya no podrá entrar al panel.`, "Quitar")) return;
       const r = await conError(() => deleteDoc(doc(db, "roles", correo)));
       if (r !== undefined) { toast("Acceso quitado"); renderStaffGrupos(); }

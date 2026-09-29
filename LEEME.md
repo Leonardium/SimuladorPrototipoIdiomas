@@ -29,8 +29,8 @@ Todo se hace en https://console.firebase.google.com, en el proyecto **simulador-
 1. Entra con un correo admin (definidos en `config.js` **y** en `firestore.rules`; deben coincidir).
 2. En **Lecturas → Cargar lecturas de ejemplo** se suben las 6 lecturas, cerradas.
 3. En **Grupos y usuarios**:
-   - Agrega los grupos.
-   - Agrega los correos de las profesoras (rol *Profesora*).
+   - Agrega a las profesoras con su nombre, que es como las verán los alumnos, y su correo.
+   - Agrega los grupos y asigna cada uno a su profesora. Cada profesora también puede dar de alta los suyos.
 4. En **Lecturas**, presiona **Abrir** en las que deben ver los alumnos.
 
 ## Cómo funciona
@@ -39,7 +39,7 @@ Todo se hace en https://console.firebase.google.com, en el proyecto **simulador-
   - Admins: los que están en `config.js` y `firestore.rules`, o los que agregues con rol *Admin*.
   - Profesoras: las registradas en *Grupos y usuarios*.
   - Alumnos: cualquier cuenta `@my.uvm.edu.mx` que no sea de las anteriores.
-- **Alumno:** la primera vez escribe su nombre y elige su grupo. Tiene un solo intento por lectura. El reloj usa la hora del servidor, así que recargar la página o cambiar de computadora no lo reinicia. Sus respuestas se guardan solas y, si se acaba el tiempo, el intento se envía automáticamente.
+- **Alumno:** la primera vez escribe su nombre y elige a su profesora y luego su grupo. Tiene un solo intento por lectura. El reloj usa la hora del servidor, así que recargar la página o cambiar de computadora no lo reinicia. Sus respuestas se guardan solas y, si se acaba el tiempo, el intento se envía automáticamente.
 - **Seguridad:**
   - Las respuestas correctas están en la colección `claves`. El alumno solo puede leerlas **después** de enviar su intento, y solo si la lectura tiene activado "Mostrar calificación".
   - El intento guarda únicamente las respuestas. La calificación se calcula contra la clave, así que no se puede falsificar.
@@ -47,10 +47,12 @@ Todo se hace en https://console.firebase.google.com, en el proyecto **simulador-
 - **Profesoras:**
   - Crean y editan lecturas. Las preguntas se pueden pegar desde Word con el importador.
   - Abren y cierran lecturas.
+  - Cada profesora ve **solo sus grupos y alumnos**; el admin ve todo y puede filtrar por profesora.
   - Ven resultados por grupo, con aciertos por pregunta.
   - Descargan un CSV que abre en Excel.
   - Pueden **reiniciar** el intento de un alumno para que lo presente otra vez.
-  - Pueden corregir el grupo de un alumno.
+  - Pueden corregir la profesora o el grupo de un alumno.
+  - Nota: la separación por profesora es del panel, no de las reglas. Para el piloto basta, porque todas son parte del equipo.
 
 ## Formato del importador de preguntas
 
