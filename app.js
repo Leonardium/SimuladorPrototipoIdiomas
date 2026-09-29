@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=4";
+import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=5";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -163,6 +163,7 @@ onAuthStateChanged(auth, async user => {
   detenerReloj();
   $("#toast").classList.add("oculto");
   estado.user = user; estado.rol = null; estado.perfil = null; estado.examen = null; estado.cacheLecturas = null;
+  estado.comoAlumno = false; estado.rolReal = null;
   if (!user) { mostrar("#vista-login"); return; }
   mostrar("#vista-cargando");
   try {
@@ -207,13 +208,17 @@ function pintarBarra() {
   $("#usuario-nombre").textContent = nombre;
   $("#avatar-ini").textContent = iniciales(nombre);
   $("#avatar-ini").style.background = estado.rol === "alumno" ? "var(--rojo)" : "#4A4A4A";
-  $("#etiqueta-rol").textContent = { alumno: "Alumno", profesor: "Profesora", admin: "Admin" }[estado.rol] || "";
+  $("#etiqueta-rol").textContent = estado.comoAlumno ? "Alumno (prueba)" : ({ alumno: "Alumno", profesor: "Profesora", admin: "Admin" }[estado.rol] || "");
+  $("#btn-panel").classList.toggle("oculto", !estado.comoAlumno);
   const nav = $("#nav");
   if (estado.rol === "alumno") { nav.classList.add("oculto"); nav.innerHTML = ""; return; }
   nav.classList.remove("oculto");
   const tabs = [["staff-lecturas", "Lecturas"], ["staff-resultados", "Resultados"], ["staff-grupos", estado.rol === "admin" ? "Grupos y usuarios" : "Grupos y alumnos"]];
-  nav.innerHTML = tabs.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("");
-  nav.querySelectorAll("button").forEach(b => b.addEventListener("click", async () => {
+  const puedeAlumno = miCorreo().split("@")[1] === minus(DOMINIO_ALUMNOS);
+  nav.innerHTML = tabs.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("")
+    + (puedeAlumno ? `<button data-alumno-prueba title="Entra como alumno con tu cuenta para probar el flujo completo">Ver como alumno</button>` : "");
+  nav.querySelector("[data-alumno-prueba]")?.addEventListener("click", entrarComoAlumno);
+  nav.querySelectorAll("button[data-v]").forEach(b => b.addEventListener("click", async () => {
     if (estado.vista === "examen" && estado.examen?.preview) detenerReloj();
     if (estado.vista === "editor" && editor.sucio) {
       if (!await confirmar("¿Salir del editor?", "Hay cambios sin guardar.", "Salir sin guardar")) return;
@@ -221,8 +226,34 @@ function pintarBarra() {
     navegar(b.dataset.v);
   }));
 }
+/* Modo alumno de prueba: el staff con cuenta @DOMINIO usa la app como alumno (las reglas lo permiten) */
+async function entrarComoAlumno() {
+  if (estado.vista === "editor" && editor.sucio && !await confirmar("¿Salir del editor?", "Hay cambios sin guardar.", "Salir sin guardar")) return;
+  const ok = await conError(async () => {
+    const p = await getDoc(doc(db, "alumnos", estado.user.uid));
+    estado.rolReal = estado.rol; estado.rol = "alumno"; estado.comoAlumno = true;
+    estado.perfil = p.exists() ? p.data() : null;
+    return true;
+  });
+  if (!ok) return;
+  toast("Modo alumno de prueba. Tus intentos se guardan como los de cualquier alumno; puedes reiniciarlos desde Resultados.", 5000);
+  pintarBarra();
+  navegar(estado.perfil ? "dashboard" : "perfil");
+}
+$("#btn-panel").addEventListener("click", async () => {
+  if (estado.vista === "examen" && estado.examen && !estado.examen.preview) {
+    if (!await confirmar("¿Volver al panel?", "Tu intento de prueba queda guardado y el tiempo sigue corriendo.", "Volver")) return;
+    await guardarAhora();
+  }
+  detenerReloj();
+  $("#toast").classList.add("oculto");
+  estado.rol = estado.rolReal; estado.comoAlumno = false; estado.perfil = null; estado.examen = null;
+  pintarBarra();
+  navegar("staff-lecturas");
+});
+
 function marcarNav() {
-  $("#nav").querySelectorAll("button").forEach(b =>
+  $("#nav").querySelectorAll("button[data-v]").forEach(b =>
     b.classList.toggle("activo", estado.vista.startsWith(b.dataset.v) || (b.dataset.v === "staff-lecturas" && ["editor", "examen", "resultados"].includes(estado.vista))));
 }
 
@@ -421,6 +452,7 @@ async function renderDashboard() {
               <div class="datos">
                 <span>${l.preguntas.length} preguntas</span>
                 <span>${l.minutos} min</span>
+                ${tieneTexto(l) ? "" : "<span>Sin lectura</span>"}
                 <span>${l.preguntas[0]?.opciones.length || 0} opciones</span>
               </div>
             </div>
@@ -494,6 +526,7 @@ function iniciarVistaPrevia(lectura, clave) {
   navegar("examen");
 }
 
+const tieneTexto = l => (l.parrafos || []).length > 0;
 function htmlLectura(lectura) {
   return lectura.parrafos.map((p, i) =>
     `<p>${lectura.numerar ? `<span class="parr">[${ROMANOS[i] || i + 1}]</span>` : ""}${esc(p)}</p>`).join("");
@@ -525,12 +558,13 @@ function renderExamen() {
         <button class="btn btn-suave" id="btn-volver">${ex.preview ? "Salir de la vista previa" : "Salir (el tiempo sigue)"}</button>
       </div>
     </div>
-    <div class="examen">
-      <aside class="panel-lectura">
+    ${lectura.instrucciones ? `<div class="instrucciones"><b>Instructions</b>${esc(lectura.instrucciones)}</div>` : ""}
+    <div class="examen ${tieneTexto(lectura) ? "" : "sin-texto"}">
+      ${tieneTexto(lectura) ? `<aside class="panel-lectura">
         <h2>${esc(lectura.titulo)}</h2>
         <div class="fuente">${esc(lectura.fuente)}</div>
         ${htmlLectura(lectura)}
-      </aside>
+      </aside>` : ""}
       <div class="panel-preguntas">
         <div class="barra-progreso">
           <span class="num" id="progreso-txt">0 / ${lectura.preguntas.length}</span>
@@ -810,7 +844,7 @@ async function renderStaffLecturas() {
         <p>Solo las lecturas <b>abiertas</b> aparecen para los alumnos. Ciérralas cuando termine el periodo del examen.</p>
       </div>
       <div class="fila-acciones">
-        ${estado.rol === "admin" ? `<button class="btn btn-suave" id="btn-semilla">Cargar lecturas de ejemplo</button>` : ""}
+        ${estado.rol === "admin" ? `<button class="btn btn-suave" id="btn-semilla">Cargar banco de lecturas</button>` : ""}
         <button class="btn btn-rojo" id="btn-nueva">+ Nueva lectura</button>
       </div>
     </div>
@@ -818,7 +852,7 @@ async function renderStaffLecturas() {
     <div class="tabla-envoltura"><table class="tabla">
       <thead><tr><th>Lectura</th><th style="text-align:right">Reactivos</th><th style="text-align:right">Min</th><th style="text-align:right">Intentos</th><th>Estado</th><th></th></tr></thead>
       <tbody>${filas}</tbody>
-    </table></div>` : `<div class="vacio">Aún no hay lecturas. Crea una nueva${estado.rol === "admin" ? " o carga las de ejemplo" : ""}.</div>`}`;
+    </table></div>` : `<div class="vacio">Aún no hay lecturas. Crea una nueva${estado.rol === "admin" ? " o carga el banco de lecturas" : ""}.</div>`}`;
 
   $("#btn-nueva").addEventListener("click", () => navegar("editor", null));
   $("#btn-semilla")?.addEventListener("click", cargarEjemplos);
@@ -839,16 +873,19 @@ async function renderStaffLecturas() {
 }
 
 async function cargarEjemplos() {
-  const ok = await confirmar("Cargar lecturas de ejemplo",
-    "Se agregarán las 6 lecturas del prototipo (cerradas, para que las revises antes de abrirlas). Si ya existen, se sobrescriben.", "Cargar");
-  if (!ok) return;
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=4");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=5");
+    const existentes = new Set((await cargarLecturasStaff(true)).map(l => l.id));
+    const nuevas = LECTURAS_EJEMPLO.filter(l => !existentes.has(l.id));
+    if (!nuevas.length) { await avisar("Nada que cargar", "Todas las lecturas del banco ya están en la plataforma."); return false; }
+    const ok = await confirmar("Cargar banco de lecturas",
+      `Se agregarán ${nuevas.length} lectura${nuevas.length > 1 ? "s" : ""} nueva${nuevas.length > 1 ? "s" : ""}, cerradas para que las revises antes de abrirlas:\n\n` + nuevas.map(l => "• " + l.titulo).join("\n") + "\n\nLas que ya existen no se tocan.", "Cargar");
+    if (!ok) return false;
     const batch = writeBatch(db);
-    LECTURAS_EJEMPLO.forEach(l => {
+    nuevas.forEach(l => {
       batch.set(doc(db, "lecturas", l.id), {
         titulo: l.titulo, seccion: l.seccion, academia: l.academia, fuente: l.fuente,
-        minutos: l.minutos, numerar: l.numerar, parrafos: l.parrafos, orden: l.orden,
+        minutos: l.minutos, numerar: l.numerar, parrafos: l.parrafos, orden: l.orden, instrucciones: l.instrucciones || "",
         preguntas: l.preguntas.map(q => ({ enunciado: q.enunciado, opciones: q.opciones, habilidad: q.habilidad })),
         activa: false, mostrarResultados: true, actualizado: serverTimestamp(),
       });
@@ -860,7 +897,7 @@ async function cargarEjemplos() {
     await batch.commit();
     return true;
   });
-  if (listo) { toast("Lecturas de ejemplo cargadas"); renderStaffLecturas(); }
+  if (listo === true) { toast("Banco de lecturas cargado"); renderStaffLecturas(); }
 }
 
 /* ===================================================================
@@ -892,7 +929,7 @@ async function renderEditor(lectura) {
       fuente: lectura.fuente || "", minutos: lectura.minutos || 15, numerar: !!lectura.numerar,
       activa: !!lectura.activa, mostrarResultados: lectura.mostrarResultados !== false,
       orden: lectura.orden ?? 1,
-      texto: (lectura.parrafos || []).join("\n\n"),
+      texto: (lectura.parrafos || []).join("\n\n"), instrucciones: lectura.instrucciones || "",
       preguntas: (lectura.preguntas || []).map((q, i) => ({
         enunciado: q.enunciado, opciones: [...q.opciones], habilidad: q.habilidad || "",
         correcta: res.clave.correctas?.[i] ?? null, justificacion: res.clave.justificaciones?.[i] || "",
@@ -903,7 +940,7 @@ async function renderEditor(lectura) {
     editor.id = null; editor.nuevo = true; editor.intentos = 0; editor.sucio = false;
     const ls = estado.cacheLecturas || [];
     editor.datos = {
-      titulo: "", seccion: "", academia: "Academia de Inglés", fuente: "", minutos: 15, numerar: true,
+      titulo: "", seccion: "", academia: "Academia de Inglés", fuente: "", minutos: 15, numerar: true, instrucciones: "",
       activa: false, mostrarResultados: true, orden: ls.length + 1, texto: "", preguntas: [preguntaVacia()],
     };
   }
@@ -963,13 +1000,14 @@ function pintarEditor() {
         <div class="campo"><label>Orden en la lista</label><input type="number" min="1" data-g="orden" value="${esc(d.orden)}"></div>
       </div>
       <div class="campo"><label>Fuente</label><input type="text" data-g="fuente" value="${esc(d.fuente)}" placeholder="Autor, año, sitio…"></div>
+      <div class="campo"><label>Instrucciones para el alumno <small>(opcional)</small></label><textarea rows="2" data-g="instrucciones" placeholder="Ej. Choose the option that correctly completes each numbered space.">${esc(d.instrucciones)}</textarea></div>
       <label class="check"><input type="checkbox" data-g="numerar" ${d.numerar ? "checked" : ""}> Numerar párrafos [I], [II]…</label>
       <label class="check"><input type="checkbox" data-g="mostrarResultados" ${d.mostrarResultados ? "checked" : ""}> Mostrar calificación y respuestas correctas al alumno después de enviar</label>
       <label class="check"><input type="checkbox" data-g="activa" ${d.activa ? "checked" : ""}> Abierta para alumnos</label>
     </div>
 
     <div class="tarjeta">
-      <h2>Texto de la lectura</h2>
+      <h2>Texto de la lectura <small style="font-weight:400;color:var(--gris-texto);font-size:13px">(opcional: déjalo vacío para un cuestionario de gramática o vocabulario)</small></h2>
       <div class="campo">
         <textarea rows="12" data-g="texto" placeholder="Pega aquí el texto. Deja una línea en blanco entre párrafos.">${esc(d.texto)}</textarea>
         <small id="ed-parrafos"></small>
@@ -1101,7 +1139,7 @@ function repintarConScroll() {
 }
 function contarParrafos() {
   const n = parrafosDe(editor.datos.texto).length;
-  const el = $("#ed-parrafos"); if (el) el.textContent = `${n} párrafo${n === 1 ? "" : "s"} detectado${n === 1 ? "" : "s"}.`;
+  const el = $("#ed-parrafos"); if (el) el.textContent = n ? `${n} párrafo${n === 1 ? "" : "s"} detectado${n === 1 ? "" : "s"}.` : "Sin texto: el alumno verá solo las preguntas.";
 }
 function parrafosDe(texto) {
   return String(texto || "").replace(/\r/g, "").split(/\n\s*\n/).map(p => p.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean);
@@ -1171,7 +1209,6 @@ function validarLectura(d) {
   if (!d.titulo.trim()) errores.push("Falta el título.");
   if (!d.seccion.trim()) errores.push("Falta la sección.");
   if (!(d.minutos >= 1)) errores.push("Los minutos deben ser 1 o más.");
-  if (!parrafosDe(d.texto).length) errores.push("Falta el texto de la lectura.");
   if (!d.preguntas.length) errores.push("Agrega al menos una pregunta.");
   d.preguntas.forEach((q, i) => {
     const n = `Pregunta ${i + 1}`;
@@ -1193,6 +1230,7 @@ async function guardarLectura() {
     const batch = writeBatch(db);
     batch.set(doc(db, "lecturas", id), {
       titulo: d.titulo.trim(), seccion: d.seccion.trim(), academia: d.academia.trim(), fuente: d.fuente.trim(),
+      instrucciones: (d.instrucciones || "").trim(),
       minutos: Math.round(+d.minutos), orden: Math.round(+d.orden || 1), numerar: !!d.numerar,
       activa: !!d.activa, mostrarResultados: !!d.mostrarResultados,
       parrafos: parrafosDe(d.texto),

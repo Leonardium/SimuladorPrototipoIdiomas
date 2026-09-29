@@ -27,11 +27,19 @@ Todo se hace en https://console.firebase.google.com, en el proyecto **simulador-
 ## Primer uso
 
 1. Entra con un correo admin (definidos en `config.js` **y** en `firestore.rules`; deben coincidir).
-2. En **Lecturas → Cargar lecturas de ejemplo** se suben las 6 lecturas, cerradas.
+2. En **Lecturas → Cargar banco de lecturas** se suben las lecturas de `seed.js` que todavía no existan, todas cerradas. Las que ya existen no se modifican.
 3. En **Grupos y usuarios**:
    - Agrega a las profesoras con su nombre, que es como las verán los alumnos, y su correo.
    - Agrega los grupos y asigna cada uno a su profesora. Cada profesora también puede dar de alta los suyos.
 4. En **Lecturas**, presiona **Abrir** en las que deben ver los alumnos.
+
+## Probar como alumno
+
+Con una cuenta de staff que termine en `@my.uvm.edu.mx`, en el panel aparece **Ver como alumno**. Ahí te registras con profesora y grupo, y presentas las lecturas **abiertas** como cualquier alumno. Tus intentos aparecen en Resultados, y desde ahí los puedes **Reiniciar** para volver a probar. Para regresar, usa **Volver al panel**.
+
+## Cuestionarios sin lectura
+
+Deja vacío el campo *Texto de la lectura*. El alumno verá solo las preguntas, a una columna. Sirve para gramática, vocabulario o *indirect writing*. El campo *Instrucciones* aparece arriba del examen.
 
 ## Cómo funciona
 

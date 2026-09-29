@@ -397,6 +397,14 @@
     padding:10px 18px;border-radius:var(--radius);font-size:14px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.3);border-left:4px solid var(--rojo)}
   .encabezado .btn-suave{background:var(--blanco);border-color:var(--gris-2)}
   .encabezado .btn-suave:hover{border-color:var(--negro)}
+  .examen.sin-texto{grid-template-columns:minmax(0,760px);justify-content:center}
+  .instrucciones{background:var(--blanco);border:1px solid var(--gris-2);border-left:5px solid var(--negro);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:15px}
+  .instrucciones b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--gris-texto);margin-bottom:2px}
+  .pregunta .enunciado > span:last-child{white-space:pre-line}
+  #usuario-nombre{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .barra nav button,.barra .btn-texto,.btn-panel{white-space:nowrap}
+  @media (max-width:1400px){ .barra .marca small{display:none} }
+  .btn-panel{background:var(--rojo);border:0;color:var(--blanco);padding:6px 12px;border-radius:var(--radius);font-size:13px;font-weight:700}
   .guardado{font-size:12px;color:var(--gris-texto);white-space:nowrap}
   .modal .acciones{margin-top:18px}
   .modal .cuerpo{font-size:15px;color:var(--negro);margin:0 0 4px;white-space:pre-line}
@@ -453,6 +461,7 @@
       <span class="etiqueta-rol" id="etiqueta-rol"></span>
       <div class="avatar" id="avatar-ini">A</div>
       <span id="usuario-nombre"></span>
+      <button class="btn-panel oculto" id="btn-panel">Volver al panel</button>
       <button class="btn-texto" id="btn-salir">Cerrar sesión</button>
     </div>
   </header>
@@ -470,6 +479,6 @@
 
 <div id="toast" class="toast oculto" role="status" aria-live="polite"></div>
 
-<script type="module" src="app.js?v=4"></script>
+<script type="module" src="app.js?v=5"></script>
 </body>
 </html>
