@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js";
+import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=3";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -809,7 +809,7 @@ async function cargarEjemplos() {
     "Se agregarán las 6 lecturas del prototipo (cerradas, para que las revises antes de abrirlas). Si ya existen, se sobrescriben.", "Cargar");
   if (!ok) return;
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=3");
     const batch = writeBatch(db);
     LECTURAS_EJEMPLO.forEach(l => {
       batch.set(doc(db, "lecturas", l.id), {
