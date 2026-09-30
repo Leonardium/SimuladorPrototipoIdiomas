@@ -23,13 +23,13 @@ export const DOMINIO_ALUMNOS = "my.uvm.edu.mx";
 
 export const ADMINS = [
   "guillermo_penaq@my.uvm.edu.mx",
-  "leonardo.peq@gmail.com"
+  "leonardo.peq13@gmail.com"
 ];
 
 /* Cuentas fuera del dominio que entran como ALUMNO, para pruebas.
    Deben coincidir con ALUMNOS_PRUEBA de firestore.rules. */
 export const ALUMNOS_PRUEBA = [
-  "leonardo.peq13@gmail.com"
+  // "cuenta.de.prueba@gmail.com"
 ];
 
 /* Nombre que aparece al pie del login */

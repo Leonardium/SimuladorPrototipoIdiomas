@@ -12,10 +12,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---------- Configuración ----------
-    function ADMINS() { return ['guillermo_penaq@my.uvm.edu.mx', 'leonardo.peq@gmail.com']; }
+    function ADMINS() { return ['guillermo_penaq@my.uvm.edu.mx', 'leonardo.peq13@gmail.com']; }
     function DOMINIO() { return 'my.uvm.edu.mx'; }
     // Cuentas externas que entran como alumno (pruebas). Igual que ALUMNOS_PRUEBA en config.js
-    function ALUMNOS_PRUEBA() { return ['leonardo.peq13@gmail.com']; }
+    function ALUMNOS_PRUEBA() { return []; }
     // Segundos de tolerancia después del tiempo límite para guardar respuestas
     function TOLERANCIA_SEG() { return 120; }
 
