@@ -14,6 +14,8 @@ service cloud.firestore {
     // ---------- Configuración ----------
     function ADMINS() { return ['guillermo_penaq@my.uvm.edu.mx', 'leonardo.peq@gmail.com']; }
     function DOMINIO() { return 'my.uvm.edu.mx'; }
+    // Cuentas externas que entran como alumno (pruebas). Igual que ALUMNOS_PRUEBA en config.js
+    function ALUMNOS_PRUEBA() { return ['leonardo.peq13@gmail.com']; }
     // Segundos de tolerancia después del tiempo límite para guardar respuestas
     function TOLERANCIA_SEG() { return 120; }
 
@@ -35,7 +37,7 @@ service cloud.firestore {
       return autenticado() && (correo() in ADMINS() || rolGuardado() in ['admin', 'profesor']);
     }
     function esAlumno() {
-      return autenticado() && correo().split('@')[1] == DOMINIO();
+      return autenticado() && (correo().split('@')[1] == DOMINIO() || correo() in ALUMNOS_PRUEBA());
     }
 
     // ---------- Roles (profesoras y admins) ----------

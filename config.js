@@ -26,5 +26,11 @@ export const ADMINS = [
   "leonardo.peq@gmail.com"
 ];
 
+/* Cuentas fuera del dominio que entran como ALUMNO, para pruebas.
+   Deben coincidir con ALUMNOS_PRUEBA de firestore.rules. */
+export const ALUMNOS_PRUEBA = [
+  "leonardo.peq13@gmail.com"
+];
+
 /* Nombre que aparece al pie del login */
 export const AUTOR = "G. Leonardo Peña Quintal";

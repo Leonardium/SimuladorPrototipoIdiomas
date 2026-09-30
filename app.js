@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } from "./config.js?v=5";
+import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR, ALUMNOS_PRUEBA } from "./config.js?v=6";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -173,7 +173,7 @@ onAuthStateChanged(auth, async user => {
     estado.miNombre = (r.exists() && r.data().nombre) || user.displayName || correo;
     if (ADMINS.map(minus).includes(correo)) rol = "admin";
     else if (r.exists()) rol = r.data().rol === "admin" ? "admin" : "profesor";
-    else if (correo.split("@")[1] === minus(DOMINIO_ALUMNOS)) rol = "alumno";
+    else if (correo.split("@")[1] === minus(DOMINIO_ALUMNOS) || ALUMNOS_PRUEBA.map(minus).includes(correo)) rol = "alumno";
     if (!rol) {
       await signOut(auth);
       mostrar("#vista-login");
@@ -874,7 +874,7 @@ async function renderStaffLecturas() {
 
 async function cargarEjemplos() {
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=5");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=6");
     const existentes = new Set((await cargarLecturasStaff(true)).map(l => l.id));
     const nuevas = LECTURAS_EJEMPLO.filter(l => !existentes.has(l.id));
     if (!nuevas.length) { await avisar("Nada que cargar", "Todas las lecturas del banco ya están en la plataforma."); return false; }
