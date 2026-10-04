@@ -136,5 +136,73 @@ service cloud.firestore {
       // El staff puede borrar un intento para dar otra oportunidad
       allow delete: if esStaff();
     }
+
+    // ---------- Exámenes compuestos (varias secciones) ----------
+    match /examenes/{id} {
+      allow read: if esStaff() || (esAlumno() && resource.data.activa == true);
+      allow write: if esStaff();
+    }
+
+    // Clave del examen: el alumno la lee solo después de enviar su intento
+    match /clavesExamen/{id} {
+      function rutaIntentoEx() {
+        return /databases/$(database)/documents/intentosExamen/$(id + '__' + request.auth.uid);
+      }
+      allow read: if esStaff()
+        || (esAlumno()
+            && exists(rutaIntentoEx())
+            && get(rutaIntentoEx()).data.estado == 'enviado'
+            && get(/databases/$(database)/documents/examenes/$(id)).data.get('mostrarResultados', true) == true);
+      allow write: if esStaff();
+    }
+
+    // Intento de examen. Doc id = <examenId>__<uid>
+    match /intentosExamen/{iid} {
+      function examenDe(eid) { return get(/databases/$(database)/documents/examenes/$(eid)).data; }
+      function alumnoDoc() { return get(/databases/$(database)/documents/alumnos/$(request.auth.uid)).data; }
+
+      allow get: if esStaff() || (autenticado() && iid.split('__')[1] == request.auth.uid);
+      allow list: if esStaff() || (autenticado() && resource.data.uid == request.auth.uid);
+
+      allow create: if esAlumno()
+        && iid == request.resource.data.examenId + '__' + request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'uid', 'examenId', 'correo', 'nombre', 'grupo', 'profe', 'estado', 'inicio', 'fin',
+             'seleccion', 'respuestas', 'cambiosPestana', 'minutos', 'totalPreguntas'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.correo == correo()
+        && request.resource.data.estado == 'en_curso'
+        && request.resource.data.inicio == request.time
+        && request.resource.data.fin == null
+        && request.resource.data.cambiosPestana == 0
+        && request.resource.data.seleccion is list
+        && request.resource.data.respuestas is list
+        && request.resource.data.seleccion.size() == request.resource.data.totalPreguntas
+        && request.resource.data.respuestas.size() == request.resource.data.totalPreguntas
+        && examenDe(request.resource.data.examenId).activa == true
+        && examenDe(request.resource.data.examenId).minutos == request.resource.data.minutos
+        && examenDe(request.resource.data.examenId).totalPreguntas == request.resource.data.totalPreguntas
+        // Grupo del alumno (según su perfil) asignado al examen; lista vacía = todos
+        && request.resource.data.grupo == alumnoDoc().grupo
+        && request.resource.data.profe == alumnoDoc().get('profe', '')
+        && (examenDe(request.resource.data.examenId).grupos.size() == 0
+            || (alumnoDoc().get('profe', '') + '|' + alumnoDoc().grupo) in examenDe(request.resource.data.examenId).grupos);
+
+      allow update: if autenticado()
+        && resource.data.uid == request.auth.uid
+        && resource.data.estado == 'en_curso'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['respuestas', 'estado', 'fin', 'cambiosPestana'])
+        && request.resource.data.respuestas is list
+        && request.resource.data.respuestas.size() == resource.data.totalPreguntas
+        && request.resource.data.cambiosPestana is int
+        && request.resource.data.cambiosPestana >= resource.data.cambiosPestana
+        && (request.resource.data.estado == 'en_curso'
+            || (request.resource.data.estado == 'enviado' && request.resource.data.fin == request.time))
+        && (request.time <= resource.data.inicio + duration.value(resource.data.minutos * 60 + TOLERANCIA_SEG(), 's')
+            || request.resource.data.respuestas == resource.data.respuestas);
+
+      allow delete: if esStaff();
+    }
   }
 }

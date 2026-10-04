@@ -404,6 +404,13 @@
   #usuario-nombre{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .barra nav button,.barra .btn-texto,.btn-panel{white-space:nowrap}
   @media (max-width:1400px){ .barra .marca small{display:none} }
+  .barra-global{position:sticky;top:60px;z-index:6;margin-top:4px;box-shadow:0 4px 12px rgba(0,0,0,.06)}
+  .bloque-seccion{margin-top:28px}
+  .bloque-cab{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:12px 18px;margin-bottom:14px;background:var(--negro);color:var(--blanco);border-left:8px solid var(--rojo);border-radius:var(--radius)}
+  .bloque-cab h2{margin:0;font-size:19px}
+  .bloque-num{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#C8C8C8}
+  .bloque-meta{margin-left:auto;font-size:13px;color:#C8C8C8}
+  .bloque-seccion .panel-lectura{top:130px;max-height:calc(100vh - 150px)}
   .btn-panel{background:var(--rojo);border:0;color:var(--blanco);padding:6px 12px;border-radius:var(--radius);font-size:13px;font-weight:700}
   .guardado{font-size:12px;color:var(--gris-texto);white-space:nowrap}
   .modal .acciones{margin-top:18px}
@@ -479,6 +486,6 @@
 
 <div id="toast" class="toast oculto" role="status" aria-live="polite"></div>
 
-<script type="module" src="app.js?v=7"></script>
+<script type="module" src="app.js?v=8"></script>
 </body>
 </html>

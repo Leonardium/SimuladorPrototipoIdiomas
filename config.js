@@ -32,5 +32,8 @@ export const ALUMNOS_PRUEBA = [
   "leonardium15313@gmail.com"
 ];
 
+/* Calificación mínima aprobatoria (%) */
+export const APROBATORIA = 70;
+
 /* Nombre que aparece al pie del login */
 export const AUTOR = "G. Leonardo Peña Quintal";

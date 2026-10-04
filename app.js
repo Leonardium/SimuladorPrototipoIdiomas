@@ -23,7 +23,10 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR, ALUMNOS_PRUEBA } from "./config.js?v=7";
+import * as CFG from "./config.js?v=8";
+const { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } = CFG;
+const ALUMNOS_PRUEBA = CFG.ALUMNOS_PRUEBA || [];
+const APROBATORIA = CFG.APROBATORIA ?? 70;
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -35,6 +38,7 @@ const db = getFirestore(fbApp);
 const $ = s => document.querySelector(s);
 const main = $("#main");
 const LETRAS = ["A", "B", "C", "D", "E"];
+const enExamen = () => estado.vista === "examen" || estado.vista === "examen-c";
 const ROMANOS = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV","XVI","XVII","XVIII","XIX","XX"];
 const TOLERANCIA_MS = 120 * 1000; // igual que TOLERANCIA_SEG en firestore.rules
 
@@ -146,7 +150,7 @@ function errorLogin(msg) {
 }
 
 $("#btn-salir").addEventListener("click", async () => {
-  if (estado.vista === "examen" && estado.examen && !estado.examen.preview) {
+  if (enExamen() && estado.examen && !estado.examen.preview) {
     const ok = await confirmar("¿Cerrar sesión?", "Tu intento queda guardado y el tiempo sigue corriendo. Podrás continuarlo al volver a entrar.", "Cerrar sesión");
     if (!ok) return;
     await guardarAhora();
@@ -193,7 +197,7 @@ onAuthStateChanged(auth, async user => {
       if (p.exists()) { estado.perfil = p.data(); navegar("dashboard"); }
       else navegar("perfil");
     } else {
-      navegar("staff-lecturas");
+      navegar("staff-examenes");
     }
   } catch (e) {
     console.error(e);
@@ -213,13 +217,13 @@ function pintarBarra() {
   const nav = $("#nav");
   if (estado.rol === "alumno") { nav.classList.add("oculto"); nav.innerHTML = ""; return; }
   nav.classList.remove("oculto");
-  const tabs = [["staff-lecturas", "Lecturas"], ["staff-resultados", "Resultados"], ["staff-grupos", estado.rol === "admin" ? "Grupos y usuarios" : "Grupos y alumnos"]];
+  const tabs = [["staff-examenes", "Exámenes"], ["staff-lecturas", "Banco de lecturas"], ["staff-resultados", "Resultados"], ["staff-grupos", estado.rol === "admin" ? "Grupos y usuarios" : "Grupos y alumnos"]];
   const puedeAlumno = miCorreo().split("@")[1] === minus(DOMINIO_ALUMNOS);
   nav.innerHTML = tabs.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("")
     + (puedeAlumno ? `<button data-alumno-prueba title="Entra como alumno con tu cuenta para probar el flujo completo">Ver como alumno</button>` : "");
   nav.querySelector("[data-alumno-prueba]")?.addEventListener("click", entrarComoAlumno);
   nav.querySelectorAll("button[data-v]").forEach(b => b.addEventListener("click", async () => {
-    if (estado.vista === "examen" && estado.examen?.preview) detenerReloj();
+    if (enExamen() && estado.examen?.preview) detenerReloj();
     if (estado.vista === "editor" && editor.sucio) {
       if (!await confirmar("¿Salir del editor?", "Hay cambios sin guardar.", "Salir sin guardar")) return;
     }
@@ -241,7 +245,7 @@ async function entrarComoAlumno() {
   navegar(estado.perfil ? "dashboard" : "perfil");
 }
 $("#btn-panel").addEventListener("click", async () => {
-  if (estado.vista === "examen" && estado.examen && !estado.examen.preview) {
+  if (enExamen() && estado.examen && !estado.examen.preview) {
     if (!await confirmar("¿Volver al panel?", "Tu intento de prueba queda guardado y el tiempo sigue corriendo.", "Volver")) return;
     await guardarAhora();
   }
@@ -249,12 +253,14 @@ $("#btn-panel").addEventListener("click", async () => {
   $("#toast").classList.add("oculto");
   estado.rol = estado.rolReal; estado.comoAlumno = false; estado.perfil = null; estado.examen = null;
   pintarBarra();
-  navegar("staff-lecturas");
+  navegar("staff-examenes");
 });
 
 function marcarNav() {
   $("#nav").querySelectorAll("button[data-v]").forEach(b =>
-    b.classList.toggle("activo", estado.vista.startsWith(b.dataset.v) || (b.dataset.v === "staff-lecturas" && ["editor", "examen", "resultados"].includes(estado.vista))));
+    b.classList.toggle("activo", estado.vista.startsWith(b.dataset.v)
+      || (b.dataset.v === "staff-lecturas" && ["editor", "examen", "resultados"].includes(estado.vista))
+      || (b.dataset.v === "staff-examenes" && ["editor-examen", "examen-resultados", "examen-c", "resultado-c"].includes(estado.vista))));
 }
 
 /* ===================================================================
@@ -263,7 +269,7 @@ function marcarNav() {
 function navegar(vista, datos) {
   estado.vista = vista;
   window.scrollTo(0, 0);
-  if (vista !== "examen") detenerReloj();
+  if (vista !== "examen" && vista !== "examen-c") detenerReloj();
   const r = {
     perfil: renderPerfil,
     dashboard: renderDashboard,
@@ -273,6 +279,11 @@ function navegar(vista, datos) {
     editor: renderEditor,
     "staff-resultados": renderStaffResultados,
     "staff-grupos": renderStaffGrupos,
+    "staff-examenes": renderStaffExamenes,
+    "editor-examen": renderEditorExamen,
+    "examen-resultados": renderResultadosExamen,
+    "examen-c": renderCompuesto,
+    "resultado-c": renderResultadoCompuesto,
   }[vista];
   if (estado.rol !== "alumno") marcarNav();
   r(datos);
@@ -408,21 +419,23 @@ async function renderDashboard() {
         } catch (_) { /* sin permiso: no se muestra */ }
       }
     }));
-    return { lecturas, intentos, califs };
+    const exs = await cargarExamenesAlumno();
+    return { lecturas, intentos, califs, exs };
   });
   if (!datos || estado.vista !== "dashboard") return;
-  const { lecturas, intentos, califs } = datos;
+  const { lecturas, intentos, califs, exs } = datos;
   const secciones = agruparPorSeccion(lecturas);
   const enviados = Object.values(intentos).filter(i => i.estado === "enviado").length;
 
   let html = `
     <div class="encabezado">
       <div>
-        <h1>Lecturas disponibles</h1>
-        <p>${estado.perfil?.grupo ? `Grupo ${esc(estado.perfil.grupo)} · ` : ""}${lecturas.length} lectura${lecturas.length === 1 ? "" : "s"} · ${enviados} completada${enviados === 1 ? "" : "s"}. Cada lectura tiene un solo intento.</p>
+        <h1>${exs.lista.length ? "Mis exámenes" : "Lecturas disponibles"}</h1>
+        <p>${estado.perfil?.grupo ? `Grupo ${esc(estado.perfil.grupo)} · ` : ""}${exs.lista.length ? `${exs.lista.length} examen${exs.lista.length === 1 ? "" : "es"} · ` : ""}${lecturas.length} lectura${lecturas.length === 1 ? "" : "s"} de práctica · ${enviados} completada${enviados === 1 ? "" : "s"}. Cada uno tiene un solo intento.</p>
       </div>
     </div>`;
-  if (!lecturas.length) html += `<div class="vacio">Todavía no hay lecturas abiertas. Vuelve más tarde.</div>`;
+  html += htmlExamenesAlumno(exs);
+  if (!lecturas.length && !exs.lista.length) html += `<div class="vacio">Todavía no hay exámenes ni lecturas abiertas. Vuelve más tarde.</div>`;
 
   secciones.forEach(s => {
     const n = s.lecturas.reduce((a, l) => a + l.preguntas.length, 0);
@@ -438,7 +451,7 @@ async function renderDashboard() {
       const c = califs[l.id];
       let lado;
       if (it?.estado === "enviado") {
-        lado = (c ? `<span class="resultado ${c.pct >= 60 ? "ok" : "mal"}">${c.aciertos}/${c.total} · ${c.pct}%</span>` : `<span class="chip verde">Enviado</span>`)
+        lado = (c ? `<span class="resultado ${c.pct >= APROBATORIA ? "ok" : "mal"}">${c.aciertos}/${c.total} · ${c.pct}%</span>` : `<span class="chip verde">Enviado</span>`)
           + (l.mostrarResultados !== false ? `<button class="btn btn-borde" data-rev="${esc(l.id)}">Ver revisión</button>` : "");
       } else if (it?.estado === "en_curso") {
         lado = `<span class="chip ambar">En curso</span><button class="btn btn-rojo" data-ini="${esc(l.id)}">Continuar</button>`;
@@ -462,6 +475,7 @@ async function renderDashboard() {
     html += `</div></section>`;
   });
   main.innerHTML = html;
+  conectarExamenesAlumno(exs);
 
   main.querySelectorAll("[data-ini]").forEach(b => b.addEventListener("click", async () => {
     const l = lecturas.find(x => x.id === b.dataset.ini);
@@ -651,7 +665,7 @@ function detenerReloj() { if (timerId) { clearInterval(timerId); timerId = null;
 /* Cambio de pestaña: se registra en el intento (anti-distracción, no anti-trampa real) */
 document.addEventListener("visibilitychange", () => {
   const ex = estado.examen;
-  if (document.hidden && estado.vista === "examen" && ex && !ex.enviando) {
+  if (document.hidden && enExamen() && ex && !ex.enviando) {
     ex.cambiosPestana++;
     mostrarAvisoPestana();
     if (!ex.preview) { ex.pendiente = true; guardarAhora(); }
@@ -667,6 +681,7 @@ function mostrarAvisoPestana() {
 
 async function enviarExamen(porTiempo = false) {
   const ex = estado.examen;
+  if (ex?.tipo === "compuesto") return enviarCompuesto(porTiempo);
   if (!ex || ex.enviando) return;
   const faltan = ex.respuestas.filter(r => r === null).length;
   if (!porTiempo && faltan > 0) {
@@ -781,8 +796,8 @@ function renderResultados({ lectura, respuestas, clave, cambiosPestana, modo, al
 
   const { aciertos, total, pct } = calificar(lectura, respuestas, clave);
   const mensaje = pct >= 90 ? "Excelente comprensión del texto." :
-                  pct >= 70 ? "Buen resultado. Revisa los reactivos marcados." :
-                  pct >= 60 ? "Aprobado, pero conviene repasar las habilidades más bajas." :
+                  pct >= 80 ? "Buen resultado. Revisa los reactivos marcados." :
+                  pct >= APROBATORIA ? "Aprobado, pero conviene repasar las habilidades más bajas." :
                               "Revisa la retroalimentación de cada reactivo.";
 
   main.innerHTML = `
@@ -874,7 +889,7 @@ async function renderStaffLecturas() {
 
 async function cargarEjemplos() {
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=7");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=8");
     const existentes = new Set((await cargarLecturasStaff(true)).map(l => l.id));
     const nuevas = LECTURAS_EJEMPLO.filter(l => !existentes.has(l.id));
     if (!nuevas.length) { await avisar("Nada que cargar", "Todas las lecturas del banco ya están en la plataforma."); return false; }
@@ -1325,7 +1340,7 @@ async function renderStaffResultados(volver) {
   // Estadísticas
   const enviados = filas.filter(f => f.c);
   const prom = enviados.length ? Math.round(enviados.reduce((a, f) => a + f.c.pct, 0) / enviados.length) : null;
-  const aprob = enviados.length ? Math.round(enviados.filter(f => f.c.pct >= 60).length / enviados.length * 100) : null;
+  const aprob = enviados.length ? Math.round(enviados.filter(f => f.c.pct >= APROBATORIA).length / enviados.length * 100) : null;
   const itemsHtml = lectura && clave && enviados.length ? lectura.preguntas.map((q, i) => {
     const ok = enviados.filter(f => f.it.respuestas?.[i] === clave.correctas[i]).length;
     const p = Math.round(ok / enviados.length * 100);
@@ -1371,7 +1386,7 @@ async function renderStaffResultados(volver) {
       <div class="stat"><b>${filas.length}</b><span>intentos</span></div>
       <div class="stat"><b>${enviados.length}</b><span>enviados</span></div>
       <div class="stat"><b>${prom != null ? prom + "%" : "—"}</b><span>promedio</span></div>
-      <div class="stat"><b>${aprob != null ? aprob + "%" : "—"}</b><span>aprobados (≥ 60%)</span></div>
+      <div class="stat"><b>${aprob != null ? aprob + "%" : "—"}</b><span>aprobados (≥ ${APROBATORIA}%)</span></div>
     </div>
     ${itemsHtml ? `<h2 style="font-size:16px;margin:0 0 10px">Aciertos por pregunta</h2><div class="items" style="margin-bottom:22px">${itemsHtml}</div>` : ""}
     ${filas.length ? `<div class="tabla-envoltura"><table class="tabla">
@@ -1569,4 +1584,560 @@ async function renderStaffGrupos() {
       if (r !== undefined) { toast("Acceso quitado"); renderStaffGrupos(); }
     }));
   }
+}
+
+/* =====================================================================
+   EXÁMENES COMPUESTOS (varias secciones, un solo reloj)
+   ---------------------------------------------------------------------
+     examenes/{id}        {titulo, nivel, minutos, instrucciones, activa, mostrarResultados,
+                           grupos:["profe|grupo"], creadoPor, totalPreguntas,
+                           secciones:[{nombre, lecturaId, titulo, fuente, numerar, instrucciones,
+                                       parrafos[], preguntas[{enunciado, opciones[], habilidad}],
+                                       usar, comunes}]}
+     clavesExamen/{id}    {secciones:[{correctas[], justificaciones[]}]}
+     intentosExamen/{id__uid}  {uid, examenId, correo, nombre, grupo, profe, estado, inicio, fin,
+                           seleccion:[{s, q, o[]}], respuestas[], cambiosPestana, minutos, totalPreguntas}
+   Cada alumno recibe: las "comunes" primeras preguntas de cada sección + (usar - comunes) al azar
+   del resto; el orden de preguntas (dentro de la sección) y de opciones se revuelve.
+   La respuesta guardada es el índice ORIGINAL de la opción elegida.
+   ===================================================================== */
+const NOMBRES_SECCION = ["Reading", "Reading 1", "Reading 2", "Vocabulary", "Grammar", "Indirect Speech", "Writing", "Use of English"];
+const barajar = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const rango = n => [...Array(n).keys()];
+const claveGrupo = (profe, grupo) => `${minus(profe)}|${grupo || ""}`;
+const usarDe = sec => Math.min(Math.max(1, +sec.usar || sec.preguntas.length), sec.preguntas.length);
+const comunesDe = sec => Math.min(Math.max(0, +sec.comunes || 0), usarDe(sec));
+const totalExamen = ex => ex.secciones.reduce((a, s) => a + usarDe(s), 0);
+
+function generarSeleccion(ex) {
+  const sel = [];
+  ex.secciones.forEach((sec, s) => {
+    const n = sec.preguntas.length, u = usarDe(sec), c = comunesDe(sec);
+    const qs = rango(c).concat(barajar(rango(n).slice(c)).slice(0, u - c));
+    barajar(qs).forEach(q => sel.push({ s, q, o: barajar(rango(sec.preguntas[q].opciones.length)) }));
+  });
+  return sel;
+}
+function calificarCompuesto(ex, seleccion, respuestas, clave) {
+  const porSec = ex.secciones.map(sec => ({ nombre: sec.nombre, aciertos: 0, total: 0 }));
+  let aciertos = 0;
+  seleccion.forEach((it, k) => {
+    porSec[it.s].total++;
+    if (respuestas?.[k] != null && respuestas[k] === clave.secciones[it.s]?.correctas[it.q]) { porSec[it.s].aciertos++; aciertos++; }
+  });
+  porSec.forEach(p => { p.pct = p.total ? Math.round(p.aciertos / p.total * 100) : 0; });
+  const total = seleccion.length;
+  return { aciertos, total, pct: total ? Math.round(aciertos / total * 100) : 0, porSec };
+}
+const asignadoAMi = ex => !ex.grupos?.length || ex.grupos.includes(claveGrupo(estado.perfil?.profe, estado.perfil?.grupo));
+
+/* ---------- Alumno: lista ---------- */
+async function cargarExamenesAlumno() {
+  const uid = estado.user.uid;
+  try {
+    const [es, is] = await Promise.all([
+      getDocs(query(collection(db, "examenes"), where("activa", "==", true))),
+      getDocs(query(collection(db, "intentosExamen"), where("uid", "==", uid))),
+    ]);
+    const lista = es.docs.map(d => ({ id: d.id, ...d.data() })).filter(asignadoAMi)
+      .sort((a, b) => (a.titulo || "").localeCompare(b.titulo || "", "es"));
+    const intentos = {}; is.docs.forEach(d => { intentos[d.data().examenId] = d.data(); });
+    const califs = {};
+    await Promise.all(lista.map(async ex => {
+      const it = intentos[ex.id];
+      if (it?.estado === "enviado" && ex.mostrarResultados !== false) {
+        try { const c = await getDoc(doc(db, "clavesExamen", ex.id)); if (c.exists()) califs[ex.id] = { ...calificarCompuesto(ex, it.seleccion, it.respuestas, c.data()), clave: c.data() }; } catch (_) {}
+      }
+    }));
+    return { lista, intentos, califs };
+  } catch (e) { console.error(e); return { lista: [], intentos: {}, califs: {} }; }
+}
+function htmlExamenesAlumno({ lista, intentos, califs }) {
+  if (!lista.length) return "";
+  return `<section class="seccion">
+    <div class="seccion-cab"><div><h2>Exámenes</h2><div class="meta">Un solo intento · el reloj corre aunque cierres la página</div></div></div>
+    <div class="lecturas">${lista.map(ex => {
+      const it = intentos[ex.id], c = califs[ex.id];
+      let lado;
+      if (it?.estado === "enviado") lado = (c ? `<span class="resultado ${c.pct >= APROBATORIA ? "ok" : "mal"}">${c.aciertos}/${c.total} · ${c.pct}%</span>` : `<span class="chip verde">Enviado</span>`)
+        + (c ? `<button class="btn btn-borde" data-exrev="${esc(ex.id)}">Ver revisión</button>` : "");
+      else if (it?.estado === "en_curso") lado = `<span class="chip ambar">En curso</span><button class="btn btn-rojo" data-exini="${esc(ex.id)}">Continuar</button>`;
+      else lado = `<button class="btn btn-rojo" data-exini="${esc(ex.id)}">Iniciar examen</button>`;
+      return `<div class="lectura"><div><h3>${esc(ex.titulo)}</h3><div class="datos">
+          <span>${ex.secciones.map(s => esc(s.nombre)).join(" · ")}</span><span>${ex.totalPreguntas || totalExamen(ex)} preguntas</span><span>${ex.minutos} min</span></div></div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end">${lado}</div></div>`;
+    }).join("")}</div></section>`;
+}
+function conectarExamenesAlumno({ lista, intentos, califs }) {
+  main.querySelectorAll("[data-exini]").forEach(b => b.addEventListener("click", async () => {
+    const ex = lista.find(x => x.id === b.dataset.exini);
+    if (!intentos[ex.id]) {
+      const ok = await confirmar(`Iniciar "${ex.titulo}"`,
+        `Tienes ${ex.minutos} minutos y un solo intento para ${ex.totalPreguntas || totalExamen(ex)} preguntas (${ex.secciones.map(s => s.nombre).join(", ")}).\n\nEl tiempo empieza al iniciar y sigue corriendo aunque cierres la página. Tus respuestas se guardan solas.`, "Iniciar ahora");
+      if (!ok) return;
+    }
+    b.disabled = true; await iniciarCompuesto(ex, intentos[ex.id]); b.disabled = false;
+  }));
+  main.querySelectorAll("[data-exrev]").forEach(b => b.addEventListener("click", () => {
+    const ex = lista.find(x => x.id === b.dataset.exrev), it = intentos[ex.id];
+    navegar("resultado-c", { ex, seleccion: it.seleccion, respuestas: it.respuestas, clave: califs[ex.id].clave, cambiosPestana: it.cambiosPestana, modo: "alumno" });
+  }));
+}
+
+/* ---------- Presentar ---------- */
+async function iniciarCompuesto(ex, previo) {
+  const uid = estado.user.uid;
+  const ref = doc(db, "intentosExamen", `${ex.id}__${uid}`);
+  const ok = await conError(async () => {
+    if (!previo) {
+      const seleccion = generarSeleccion(ex);
+      await setDoc(ref, {
+        uid, examenId: ex.id, correo: minus(estado.user.email),
+        nombre: estado.perfil?.nombre || estado.user.displayName || "",
+        grupo: estado.perfil?.grupo || "", profe: estado.perfil?.profe || "",
+        estado: "en_curso", inicio: serverTimestamp(), fin: null,
+        seleccion, respuestas: new Array(seleccion.length).fill(null),
+        cambiosPestana: 0, minutos: ex.minutos, totalPreguntas: seleccion.length,
+      });
+    }
+    const it = (await getDoc(ref)).data();
+    estado.examen = { tipo: "compuesto", preview: false, ex, ref, seleccion: it.seleccion, respuestas: [...it.respuestas],
+      limite: ms(it.inicio) + it.minutos * 60000, cambiosPestana: it.cambiosPestana || 0, pendiente: false, enviando: false };
+    return true;
+  });
+  if (ok) navegar("examen-c");
+}
+function previaCompuesto(ex, clave) {
+  const seleccion = generarSeleccion(ex);
+  estado.examen = { tipo: "compuesto", preview: true, ex, clave, seleccion, respuestas: new Array(seleccion.length).fill(null),
+    limite: Date.now() + ex.minutos * 60000, cambiosPestana: 0 };
+  navegar("examen-c");
+}
+
+function renderCompuesto() {
+  const st = estado.examen, { ex, seleccion, respuestas } = st;
+  let k = 0;
+  const bloques = ex.secciones.map((sec, s) => {
+    const items = seleccion.map((it, idx) => ({ ...it, idx })).filter(it => it.s === s);
+    if (!items.length) return "";
+    const preguntas = items.map(it => {
+      const q = sec.preguntas[it.q]; k++;
+      return `<div class="pregunta" data-k="${it.idx}">
+        <div class="enunciado"><span class="n">${it.idx + 1}</span><span>${esc(q.enunciado)}</span></div>
+        ${it.o.map((orig, j) => `<label class="opcion ${respuestas[it.idx] === orig ? "elegida" : ""}">
+          <input type="radio" name="k${it.idx}" value="${orig}" ${respuestas[it.idx] === orig ? "checked" : ""}>
+          <span class="letra">${LETRAS[j]}</span><span>${esc(q.opciones[orig])}</span></label>`).join("")}
+      </div>`;
+    }).join("");
+    const conTexto = (sec.parrafos || []).length > 0;
+    return `<section class="bloque-seccion">
+      <div class="bloque-cab"><span class="bloque-num">Sección ${s + 1}</span><h2>${esc(sec.nombre)}</h2><span class="bloque-meta">${items.length} pregunta${items.length > 1 ? "s" : ""}</span></div>
+      ${sec.instrucciones ? `<div class="instrucciones"><b>Instructions</b>${esc(sec.instrucciones)}</div>` : ""}
+      <div class="examen ${conTexto ? "" : "sin-texto"}">
+        ${conTexto ? `<aside class="panel-lectura"><h2>${esc(sec.titulo)}</h2><div class="fuente">${esc(sec.fuente || "")}</div>${htmlLectura(sec)}</aside>` : ""}
+        <div class="panel-preguntas">${preguntas}</div>
+      </div></section>`;
+  }).join("");
+
+  main.innerHTML = `
+    ${st.preview ? `<div class="aviso" style="margin-bottom:18px">Vista previa de profesora: preguntas elegidas al azar como las vería un alumno. Nada se guarda.</div>` : ""}
+    <div class="encabezado">
+      <div><h1>${esc(ex.titulo)}</h1><p>${ex.secciones.map(s => esc(s.nombre)).join(" · ")} · ${seleccion.length} preguntas · ${ex.minutos} minutos</p></div>
+      <div class="fila-acciones">
+        <span class="guardado" id="guardado">${st.preview ? "" : "Respuestas guardadas"}</span>
+        <button class="btn btn-suave" id="btn-volver">${st.preview ? "Salir de la vista previa" : "Salir (el tiempo sigue)"}</button>
+      </div>
+    </div>
+    ${ex.instrucciones ? `<div class="instrucciones"><b>Instrucciones</b>${esc(ex.instrucciones)}</div>` : ""}
+    <div class="barra-progreso barra-global">
+      <span class="num" id="progreso-txt">0 / ${seleccion.length}</span>
+      <div class="pista"><i id="progreso-barra"></i></div>
+      <span class="reloj" id="reloj">--:--</span>
+    </div>
+    <div id="aviso-pestana" class="aviso oculto" style="margin-top:12px"></div>
+    ${bloques}
+    <div class="acciones" style="margin-top:20px"><button class="btn btn-rojo" id="btn-enviar">Enviar examen</button></div>`;
+
+  main.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener("change", e => {
+    const i = +e.target.name.slice(1), v = +e.target.value;
+    st.respuestas[i] = v;
+    const caja = main.querySelector(`.pregunta[data-k="${i}"]`);
+    caja.querySelectorAll(".opcion").forEach(o => o.classList.toggle("elegida", o.querySelector("input").checked));
+    caja.classList.remove("sin-responder");
+    actualizarProgreso(); programarGuardado();
+  }));
+  $("#btn-volver").addEventListener("click", async () => {
+    if (st.preview) { navegar("staff-examenes"); return; }
+    if (!await confirmar("¿Salir del examen?", "Tus respuestas quedan guardadas, pero el tiempo sigue corriendo. Si se acaba, el examen se envía con lo que tengas.", "Salir")) return;
+    await guardarAhora(); navegar("dashboard");
+  });
+  $("#btn-enviar").addEventListener("click", () => enviarCompuesto(false));
+  if (st.cambiosPestana) mostrarAvisoPestana();
+  actualizarProgreso(); iniciarReloj();
+}
+
+async function enviarCompuesto(porTiempo) {
+  const st = estado.examen;
+  if (!st || st.enviando) return;
+  const faltan = st.respuestas.filter(r => r === null).length;
+  if (!porTiempo) {
+    if (faltan) main.querySelectorAll(".pregunta[data-k]").forEach(p => p.classList.toggle("sin-responder", st.respuestas[+p.dataset.k] === null));
+    const ok = await confirmar(faltan ? "Preguntas sin responder" : "¿Enviar examen?",
+      faltan ? `Tienes ${faltan} pregunta${faltan > 1 ? "s" : ""} sin responder. Después de enviar ya no podrás cambiar nada.` : "Después de enviar ya no podrás cambiar tus respuestas.",
+      faltan ? "Enviar de todos modos" : "Enviar");
+    if (!ok) return;
+  }
+  detenerReloj(); st.enviando = true; clearTimeout(autosaveId);
+  const btn = $("#btn-enviar"); if (btn) { btn.disabled = true; btn.textContent = "Enviando…"; }
+  if (st.preview) { navegar("resultado-c", { ex: st.ex, seleccion: st.seleccion, respuestas: st.respuestas, clave: st.clave, cambiosPestana: st.cambiosPestana, modo: "preview" }); return; }
+  try {
+    await updateDoc(st.ref, { respuestas: st.respuestas, cambiosPestana: st.cambiosPestana, estado: "enviado", fin: serverTimestamp() });
+  } catch (e) {
+    console.warn("Reintentando envío sin cambiar respuestas", e);
+    try { await updateDoc(st.ref, { estado: "enviado", fin: serverTimestamp(), cambiosPestana: st.cambiosPestana }); }
+    catch (e2) {
+      st.enviando = false; if (btn) { btn.disabled = false; btn.textContent = "Enviar examen"; }
+      await avisar("No se pudo enviar", mensajeError(e2) + "\n\nRevisa tu conexión y vuelve a presionar Enviar."); return;
+    }
+  }
+  if (porTiempo) toast("Se acabó el tiempo: tu examen se envió automáticamente.", 4000);
+  const it = (await getDoc(st.ref)).data();
+  if (st.ex.mostrarResultados === false) { navegar("resultado-c", { ex: st.ex, modo: "oculto" }); return; }
+  const c = await conError(() => getDoc(doc(db, "clavesExamen", st.ex.id)));
+  navegar("resultado-c", { ex: st.ex, seleccion: it.seleccion, respuestas: it.respuestas, clave: c?.data?.(), cambiosPestana: it.cambiosPestana, modo: "alumno" });
+}
+
+function renderResultadoCompuesto({ ex, seleccion, respuestas, clave, cambiosPestana, modo, alumno, volver }) {
+  const textoVolver = modo === "preview" ? "Volver a exámenes" : modo === "staff" ? "Volver a resultados" : "Volver al inicio";
+  const irAtras = () => modo === "preview" ? navegar("staff-examenes") : modo === "staff" ? navegar("examen-resultados", volver) : navegar("dashboard");
+  if (modo === "oculto" || !clave) {
+    main.innerHTML = `<div class="encabezado"><div><h1>Examen enviado</h1><p>${esc(ex.titulo)}</p></div><button class="btn btn-rojo" id="btn-inicio">${textoVolver}</button></div>
+      <div class="resumen"><div class="puntaje">✓</div><div><h2>Tu examen quedó registrado</h2><p>Tu profesora revisará los resultados.</p></div></div>`;
+    $("#btn-inicio").addEventListener("click", irAtras); return;
+  }
+  const r = calificarCompuesto(ex, seleccion, respuestas, clave);
+  const msg = r.pct >= 90 ? "Excelente resultado." : r.pct >= 80 ? "Buen resultado. Revisa los reactivos marcados." : r.pct >= APROBATORIA ? "Aprobado; conviene repasar las secciones más bajas." : "Revisa la retroalimentación de cada reactivo.";
+  const revision = ex.secciones.map((sec, s) => {
+    const items = seleccion.map((it, idx) => ({ ...it, idx })).filter(it => it.s === s);
+    if (!items.length) return "";
+    return `<h2 style="font-size:18px;margin:26px 0 12px">Sección ${s + 1} · ${esc(sec.nombre)} <small style="font-weight:400;color:var(--gris-texto)">${r.porSec[s].aciertos}/${r.porSec[s].total}</small></h2>
+      <div class="panel-preguntas">${items.map(it => {
+        const q = sec.preguntas[it.q], cor = clave.secciones[s].correctas[it.q], resp = respuestas?.[it.idx] ?? null;
+        return `<div class="pregunta"><div class="enunciado"><span class="n">${it.idx + 1}</span><span>${esc(q.enunciado)}</span></div>
+          ${it.o.map((orig, j) => `<div class="opcion ${orig === cor ? "correcta" : resp === orig ? "incorrecta" : ""}"><span class="letra">${LETRAS[j]}</span><span>${esc(q.opciones[orig])}</span></div>`).join("")}
+          <div class="justificacion"><b>${esc(q.habilidad || sec.nombre)}</b>${esc(clave.secciones[s].justificaciones?.[it.q] || (resp === cor ? "Respuesta correcta." : resp === null ? "No respondiste este reactivo." : "Respuesta incorrecta."))}</div></div>`;
+      }).join("")}</div>`;
+  }).join("");
+  main.innerHTML = `
+    ${modo === "preview" ? `<div class="aviso" style="margin-bottom:18px">Vista previa: este resultado no se guardó.</div>` : ""}
+    <div class="encabezado"><div><h1>${modo === "staff" ? esc(alumno?.nombre || "Resultado") : "Resultados"}</h1>
+      <p>${esc(ex.titulo)}${modo === "staff" && alumno ? ` · ${esc(alumno.correo)} · ${esc(alumno.grupo || "")}` : ""}</p></div>
+      <button class="btn btn-rojo" id="btn-inicio">${textoVolver}</button></div>
+    <div class="resumen"><div class="puntaje">${r.pct}<small>%</small></div><div>
+      <h2>${r.aciertos} de ${r.total} reactivos correctos</h2>
+      <p>${modo === "staff" ? (r.pct >= APROBATORIA ? "Aprobado" : "No aprobado") : msg}${cambiosPestana ? ` · Salió de la pestaña ${cambiosPestana} ${cambiosPestana === 1 ? "vez" : "veces"}.` : ""}</p></div></div>
+    <h2 style="font-size:18px;margin:0 0 12px">Resultado por sección</h2>
+    <div class="habilidades">${r.porSec.map(p => p.total ? `<div class="hab ${p.aciertos === p.total ? "perfecta" : ""}"><div class="nombre">${esc(p.nombre)}</div>
+      <div class="frac">${p.aciertos}<small> / ${p.total} · ${p.pct}%</small></div><div class="mini"><i style="width:${p.pct}%"></i></div></div>` : "").join("")}</div>
+    ${revision}`;
+  $("#btn-inicio").addEventListener("click", irAtras);
+}
+
+/* ---------- Staff: lista de exámenes ---------- */
+async function cargarExamenesStaff() {
+  const [es, is] = await Promise.all([getDocs(collection(db, "examenes")), getDocs(collection(db, "intentosExamen"))]);
+  const conteo = {}; is.docs.forEach(d => { const x = d.data(); conteo[x.examenId] = (conteo[x.examenId] || 0) + 1; });
+  let lista = es.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.titulo || "").localeCompare(b.titulo || "", "es"));
+  if (soyProfe()) {
+    const mios = new Set(gruposCfg().filter(g => g.profe === miCorreo()).map(g => claveGrupo(g.profe, g.nombre)));
+    lista = lista.filter(ex => ex.creadoPor === miCorreo() || !ex.grupos?.length || ex.grupos.some(g => mios.has(g)));
+  }
+  return { lista, conteo };
+}
+async function renderStaffExamenes() {
+  cargandoEn(main, "Cargando exámenes…");
+  const datos = await conError(async () => {
+    const cfg = await getDoc(doc(db, "config", "general"));
+    estado.config = cfg.exists() ? { grupos: [], ...cfg.data() } : { grupos: [] };
+    return cargarExamenesStaff();
+  });
+  if (!datos || estado.vista !== "staff-examenes") return;
+  const { lista, conteo } = datos;
+  const nombreGrupos = ex => !ex.grupos?.length ? "Todos los grupos" : `${ex.grupos.length} grupo${ex.grupos.length > 1 ? "s" : ""}`;
+  main.innerHTML = `
+    <div class="encabezado"><div><h1>Exámenes</h1>
+      <p>Un examen junta varias secciones del banco de lecturas con un solo reloj. Solo lo ven los alumnos de los grupos asignados, y únicamente mientras está <b>abierto</b>.</p></div>
+      <button class="btn btn-rojo" id="btn-nuevo-ex">+ Nuevo examen</button></div>
+    ${lista.length ? `<div class="tabla-envoltura"><table class="tabla">
+      <thead><tr><th>Examen</th><th style="text-align:right">Preguntas</th><th style="text-align:right">Min</th><th>Grupos</th><th style="text-align:right">Intentos</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${lista.map(ex => `<tr>
+        <td><b>${esc(ex.titulo)}</b><span class="sub">${ex.secciones.map(s => `${esc(s.nombre)} (${usarDe(s)})`).join(" · ")}</span></td>
+        <td class="num">${ex.totalPreguntas || totalExamen(ex)}</td><td class="num">${ex.minutos}</td>
+        <td>${esc(nombreGrupos(ex))}</td><td class="num">${conteo[ex.id] || 0}</td>
+        <td>${ex.activa ? `<span class="chip verde">Abierto</span>` : `<span class="chip gris">Cerrado</span>`}</td>
+        <td class="acc">
+          <button class="btn btn-suave btn-chico" data-extoggle="${esc(ex.id)}">${ex.activa ? "Cerrar" : "Abrir"}</button>
+          <button class="btn btn-suave btn-chico" data-exprev="${esc(ex.id)}">Vista previa</button>
+          <button class="btn btn-suave btn-chico" data-exres="${esc(ex.id)}">Resultados</button>
+          <button class="btn btn-borde btn-chico" data-exedit="${esc(ex.id)}">Editar</button>
+        </td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="vacio">Aún no hay exámenes. Crea uno con las lecturas del banco.</div>`}`;
+  $("#btn-nuevo-ex").addEventListener("click", () => navegar("editor-examen", null));
+  const porId = id => lista.find(x => x.id === id);
+  main.querySelectorAll("[data-exedit]").forEach(b => b.addEventListener("click", () => navegar("editor-examen", porId(b.dataset.exedit))));
+  main.querySelectorAll("[data-exres]").forEach(b => b.addEventListener("click", () => navegar("examen-resultados", { examenId: b.dataset.exres, grupo: "" })));
+  main.querySelectorAll("[data-extoggle]").forEach(b => b.addEventListener("click", async () => {
+    const ex = porId(b.dataset.extoggle);
+    if (!ex.activa && !await confirmar("¿Abrir examen?", `Los alumnos de ${!ex.grupos?.length ? "TODOS los grupos" : "los grupos asignados"} podrán presentarlo desde ahora.`, "Abrir")) return;
+    b.disabled = true;
+    const r = await conError(() => updateDoc(doc(db, "examenes", ex.id), { activa: !ex.activa }));
+    if (r !== undefined) { toast(ex.activa ? "Examen cerrado" : "Examen abierto"); renderStaffExamenes(); } else b.disabled = false;
+  }));
+  main.querySelectorAll("[data-exprev]").forEach(b => b.addEventListener("click", async () => {
+    const ex = porId(b.dataset.exprev);
+    const c = await conError(() => getDoc(doc(db, "clavesExamen", ex.id)));
+    if (c) previaCompuesto(ex, c.exists() ? c.data() : { secciones: [] });
+  }));
+}
+
+/* ---------- Staff: editor de examen ---------- */
+const edEx = { id: null, datos: null, sucio: false, intentos: 0 };
+async function renderEditorExamen(ex) {
+  cargandoEn(main, "Abriendo editor…");
+  const res = await conError(async () => {
+    const [ls, cfg, rs] = await Promise.all([
+      cargarLecturasStaff(true), getDoc(doc(db, "config", "general")),
+      estado.rol === "admin" ? getDocs(collection(db, "roles")) : Promise.resolve(null)]);
+    estado.config = cfg.exists() ? { grupos: [], ...cfg.data() } : { grupos: [] };
+    const n = ex ? (await getDocs(query(collection(db, "intentosExamen"), where("examenId", "==", ex.id)))).size : 0;
+    return { ls, n };
+  });
+  if (!res) return navegar("staff-examenes");
+  if (ex) {
+    edEx.id = ex.id; edEx.intentos = res.n;
+    edEx.datos = { titulo: ex.titulo, nivel: ex.nivel || "", minutos: ex.minutos, instrucciones: ex.instrucciones || "",
+      mostrarResultados: ex.mostrarResultados !== false, activa: !!ex.activa, grupos: [...(ex.grupos || [])],
+      secciones: ex.secciones.map(s => ({ nombre: s.nombre, lecturaId: s.lecturaId, usar: usarDe(s), comunes: comunesDe(s) })) };
+  } else {
+    edEx.id = null; edEx.intentos = 0;
+    edEx.datos = { titulo: "", nivel: "", minutos: 50, instrucciones: "", mostrarResultados: true, activa: false,
+      grupos: soyProfe() ? gruposCfg().filter(g => g.profe === miCorreo()).map(g => claveGrupo(g.profe, g.nombre)) : [], secciones: [] };
+  }
+  edEx.sucio = false; edEx.banco = res.ls;
+  pintarEditorExamen();
+}
+function pintarEditorExamen() {
+  const d = edEx.datos, banco = edEx.banco;
+  const lec = id => banco.find(l => l.id === id);
+  const grupos = soyProfe() ? gruposCfg().filter(g => g.profe === miCorreo()) : gruposCfg();
+  const porProfe = {}; grupos.forEach(g => { (porProfe[g.profeNombre || g.profe || "Sin profesora"] ||= []).push(g); });
+  const total = d.secciones.reduce((a, s) => a + (lec(s.lecturaId) ? Math.min(+s.usar || 0, lec(s.lecturaId).preguntas.length) : 0), 0);
+  const opcionesBanco = banco.map(l => `<option value="${esc(l.id)}">${esc(l.titulo)} — ${l.preguntas.length} preg. ${tieneTexto(l) ? "" : "(sin texto)"} · ${esc(l.seccion)}</option>`).join("");
+
+  main.innerHTML = `
+    <div class="encabezado"><div><h1>${edEx.id ? "Editar examen" : "Nuevo examen"}</h1>
+      <p>Las secciones se copian del banco al guardar. Si después cambias una lectura del banco, vuelve a guardar el examen para actualizarlo.</p></div>
+      <button class="btn btn-suave" id="ee-volver">Volver</button></div>
+    ${edEx.intentos ? `<div class="aviso" style="margin-bottom:18px">Este examen ya tiene ${edEx.intentos} intento${edEx.intentos > 1 ? "s" : ""}. Cambiar secciones o preguntas puede descuadrar sus calificaciones.</div>` : ""}
+    <div class="tarjeta"><h2>Datos generales</h2>
+      <div class="campo"><label>Título</label><input type="text" data-eg="titulo" value="${esc(d.titulo)}" placeholder="Ej. Simulador 5º semestre — Básico"></div>
+      <div class="rejilla">
+        <div class="campo"><label>Nivel</label><input type="text" data-eg="nivel" list="dl-nivel" value="${esc(d.nivel)}" placeholder="Básico / Avanzado"></div>
+        <div class="campo"><label>Minutos (todo el examen)</label><input type="number" min="1" max="240" data-eg="minutos" value="${esc(d.minutos)}"></div>
+      </div>
+      <div class="campo"><label>Instrucciones generales <small>(opcional)</small></label><textarea rows="2" data-eg="instrucciones">${esc(d.instrucciones)}</textarea></div>
+      <label class="check"><input type="checkbox" data-eg="mostrarResultados" ${d.mostrarResultados ? "checked" : ""}> Mostrar calificación y respuestas correctas al alumno al terminar</label>
+      <label class="check"><input type="checkbox" data-eg="activa" ${d.activa ? "checked" : ""}> Abierto para alumnos</label>
+    </div>
+    <div class="tarjeta"><h2>Grupos que lo presentan</h2>
+      <p style="margin:0 0 10px;font-size:14px;color:var(--gris-texto)">${soyProfe() ? "Marca tus grupos." : "Si no marcas ninguno, lo ven <b>todos</b> los alumnos."}</p>
+      ${Object.keys(porProfe).length ? Object.entries(porProfe).map(([p, gs]) => `<div style="margin-bottom:10px"><div class="lbl" style="font-size:13px;font-weight:700;margin-bottom:4px">${esc(p)}</div>
+        ${gs.map(g => { const k = claveGrupo(g.profe, g.nombre); return `<label class="check"><input type="checkbox" data-grupo="${esc(k)}" ${d.grupos.includes(k) ? "checked" : ""}> ${esc(g.nombre)}</label>`; }).join("")}</div>`).join("")
+        : `<div class="vacio">No hay grupos registrados. Créalos en "Grupos".</div>`}
+    </div>
+    <div class="tarjeta"><div class="fila-acciones" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">Secciones (${d.secciones.length}) · ${total} preguntas por alumno</h2></div>
+      <p style="margin:0 0 14px;font-size:14px;color:var(--gris-texto)"><b>Usar</b>: cuántas preguntas de esa lectura ve cada alumno. <b>Comunes</b>: cuántas son iguales para todos (las primeras de la lectura); el resto sale al azar. Ej.: usar 6, comunes 4 ≈ 60/40.</p>
+      ${d.secciones.map((s, i) => { const l = lec(s.lecturaId); const n = l ? l.preguntas.length : 0; return `
+        <div class="q-editor" data-sec="${i}">
+          <div class="q-cab"><b>Sección ${i + 1}</b><div class="fila-acciones">
+            <button class="btn-icono" data-sacc="subir" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button class="btn-icono" data-sacc="bajar" ${i === d.secciones.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="btn-icono" data-sacc="borrar">✕</button></div></div>
+          <div class="rejilla">
+            <div class="campo"><label>Nombre de la sección</label><input type="text" data-sf="nombre" list="dl-secn" value="${esc(s.nombre)}"></div>
+            <div class="campo"><label>Lectura / cuestionario del banco</label><select data-sf="lecturaId"><option value="">Elige…</option>${opcionesBanco.replace(`value="${esc(s.lecturaId)}"`, `value="${esc(s.lecturaId)}" selected`)}</select></div>
+          </div>
+          <div class="rejilla">
+            <div class="campo"><label>Usar (de ${n})</label><input type="number" min="1" max="${n || 1}" data-sf="usar" value="${esc(s.usar)}"></div>
+            <div class="campo"><label>Comunes</label><input type="number" min="0" max="${n || 0}" data-sf="comunes" value="${esc(s.comunes)}"></div>
+          </div>
+          ${l ? `<small style="color:var(--gris-texto)">${Math.min(s.comunes, s.usar)} comunes + ${Math.max(0, Math.min(s.usar, n) - Math.min(s.comunes, s.usar))} al azar de ${n - Math.min(s.comunes, s.usar)} · ${l.minutos} min sugeridos en el banco</small>` : ""}
+        </div>`; }).join("")}
+      <button class="btn btn-borde" id="ee-agregar">+ Agregar sección</button>
+    </div>
+    <div class="pegajoso fila-acciones" style="justify-content:space-between">
+      <div>${edEx.id ? `<button class="btn btn-peligro" id="ee-eliminar">Eliminar examen</button>` : ""}</div>
+      <div class="fila-acciones"><span class="guardado" id="ee-estado">${edEx.sucio ? "Cambios sin guardar" : ""}</span>
+        <button class="btn btn-rojo" id="ee-guardar">Guardar examen</button></div>
+    </div>
+    <datalist id="dl-nivel"><option value="Básico"><option value="Avanzado"></datalist>
+    <datalist id="dl-secn">${NOMBRES_SECCION.map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
+
+  const sucio = () => { edEx.sucio = true; const e = $("#ee-estado"); if (e) e.textContent = "Cambios sin guardar"; };
+  main.querySelectorAll("[data-eg]").forEach(el => el.addEventListener(el.type === "checkbox" ? "change" : "input", () => {
+    d[el.dataset.eg] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; sucio();
+  }));
+  main.querySelectorAll("[data-grupo]").forEach(el => el.addEventListener("change", () => {
+    const k = el.dataset.grupo; d.grupos = d.grupos.filter(x => x !== k); if (el.checked) d.grupos.push(k); sucio();
+  }));
+  main.querySelectorAll("[data-sf]").forEach(el => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
+    const s = d.secciones[+el.closest("[data-sec]").dataset.sec], f = el.dataset.sf;
+    s[f] = el.type === "number" ? +el.value : el.value;
+    if (f === "lecturaId") {
+      const l = lec(el.value);
+      if (l) { s.usar = Math.min(l.preguntas.length, Math.max(1, Math.round(l.preguntas.length * 0.6))); s.comunes = Math.round(s.usar * 0.6);
+        if (!s.nombre) s.nombre = tieneTexto(l) ? "Reading" : "Vocabulary"; }
+    }
+    sucio();
+    if (f !== "nombre") { const y = window.scrollY; pintarEditorExamen(); window.scrollTo(0, y); }
+  }));
+  main.querySelectorAll("[data-sacc]").forEach(b => b.addEventListener("click", () => {
+    const i = +b.closest("[data-sec]").dataset.sec, ss = d.secciones;
+    if (b.dataset.sacc === "subir") [ss[i - 1], ss[i]] = [ss[i], ss[i - 1]];
+    if (b.dataset.sacc === "bajar") [ss[i + 1], ss[i]] = [ss[i], ss[i + 1]];
+    if (b.dataset.sacc === "borrar") ss.splice(i, 1);
+    sucio(); const y = window.scrollY; pintarEditorExamen(); window.scrollTo(0, y);
+  }));
+  $("#ee-agregar").addEventListener("click", () => { d.secciones.push({ nombre: "", lecturaId: "", usar: 1, comunes: 0 }); sucio(); const y = window.scrollY; pintarEditorExamen(); window.scrollTo(0, y); });
+  $("#ee-volver").addEventListener("click", async () => {
+    if (edEx.sucio && !await confirmar("¿Salir sin guardar?", "Perderás los cambios.", "Salir")) return;
+    edEx.sucio = false; navegar("staff-examenes");
+  });
+  $("#ee-guardar").addEventListener("click", guardarExamen);
+  $("#ee-eliminar")?.addEventListener("click", async () => {
+    if (!await confirmar("¿Eliminar este examen?", `"${d.titulo}" desaparecerá para todos.${edEx.intentos ? ` Sus ${edEx.intentos} intentos se conservan en la base de datos, pero ya no podrás verlos aquí.` : ""}\n\nSi solo quieres ocultarlo, mejor ciérralo.`, "Eliminar")) return;
+    const ok = await conError(async () => { const b = writeBatch(db); b.delete(doc(db, "examenes", edEx.id)); b.delete(doc(db, "clavesExamen", edEx.id)); await b.commit(); });
+    if (ok) { edEx.sucio = false; toast("Examen eliminado"); navegar("staff-examenes"); }
+  });
+}
+async function guardarExamen() {
+  const d = edEx.datos, banco = edEx.banco;
+  const err = [];
+  if (!d.titulo.trim()) err.push("Falta el título.");
+  if (!(d.minutos >= 1)) err.push("Los minutos deben ser 1 o más.");
+  if (!d.secciones.length) err.push("Agrega al menos una sección.");
+  d.secciones.forEach((s, i) => {
+    const l = banco.find(x => x.id === s.lecturaId);
+    if (!s.nombre.trim()) err.push(`Sección ${i + 1}: falta el nombre.`);
+    if (!l) err.push(`Sección ${i + 1}: elige una lectura del banco.`);
+    else if (!(s.usar >= 1 && s.usar <= l.preguntas.length)) err.push(`Sección ${i + 1}: "usar" debe estar entre 1 y ${l.preguntas.length}.`);
+    if (!(s.comunes >= 0 && s.comunes <= s.usar)) err.push(`Sección ${i + 1}: "comunes" debe estar entre 0 y "usar".`);
+  });
+  if (soyProfe() && !d.grupos.length) err.push("Marca al menos uno de tus grupos.");
+  if (err.length) return avisar("Revisa el examen", err.join("\n"));
+  const btn = $("#ee-guardar"); btn.disabled = true; btn.textContent = "Guardando…";
+  const id = edEx.id || `${slug(d.titulo)}-${Math.random().toString(36).slice(2, 6)}`;
+  const ok = await conError(async () => {
+    const claves = await Promise.all(d.secciones.map(s => getDoc(doc(db, "claves", s.lecturaId))));
+    const secciones = d.secciones.map(s => {
+      const l = banco.find(x => x.id === s.lecturaId);
+      return { nombre: s.nombre.trim(), lecturaId: l.id, titulo: l.titulo, fuente: l.fuente || "", numerar: !!l.numerar,
+        instrucciones: l.instrucciones || "", parrafos: l.parrafos || [],
+        preguntas: l.preguntas.map(q => ({ enunciado: q.enunciado, opciones: q.opciones, habilidad: q.habilidad || "" })),
+        usar: Math.round(s.usar), comunes: Math.round(s.comunes) };
+    });
+    const b = writeBatch(db);
+    const base = { titulo: d.titulo.trim(), nivel: (d.nivel || "").trim(), minutos: Math.round(d.minutos), instrucciones: (d.instrucciones || "").trim(),
+      mostrarResultados: !!d.mostrarResultados, activa: !!d.activa, grupos: d.grupos, secciones,
+      totalPreguntas: secciones.reduce((a, s) => a + s.usar, 0), actualizado: serverTimestamp() };
+    if (!edEx.id) base.creadoPor = miCorreo();
+    b.set(doc(db, "examenes", id), base, { merge: true });
+    b.set(doc(db, "clavesExamen", id), { secciones: claves.map(c => { const x = c.exists() ? c.data() : {}; return { correctas: x.correctas || [], justificaciones: x.justificaciones || [] }; }) });
+    await b.commit();
+  });
+  if (ok) { edEx.sucio = false; toast("Examen guardado"); navegar("staff-examenes"); }
+  else { btn.disabled = false; btn.textContent = "Guardar examen"; }
+}
+
+/* ---------- Staff: resultados de un examen ---------- */
+async function renderResultadosExamen(f = {}) {
+  const filtro = { examenId: f.examenId, grupo: f.grupo || "", profe: f.profe || "" };
+  cargandoEn(main, "Cargando resultados…");
+  const datos = await conError(async () => {
+    const [e, c, is, as] = await Promise.all([
+      getDoc(doc(db, "examenes", filtro.examenId)), getDoc(doc(db, "clavesExamen", filtro.examenId)),
+      getDocs(query(collection(db, "intentosExamen"), where("examenId", "==", filtro.examenId))), getDocs(collection(db, "alumnos"))]);
+    const alumnos = {}; as.docs.forEach(d => { alumnos[d.id] = d.data(); });
+    return { ex: { id: e.id, ...e.data() }, clave: c.exists() ? c.data() : null, intentos: is.docs.map(d => ({ id: d.id, ...d.data() })), alumnos };
+  });
+  if (!datos || estado.vista !== "examen-resultados") return;
+  const { ex, clave, alumnos } = datos;
+  const grupoDe = it => alumnos[it.uid]?.grupo || it.grupo || "";
+  const profeDe = it => minus(alumnos[it.uid]?.profe ?? it.profe ?? "");
+  const nombreDe = it => alumnos[it.uid]?.nombre || it.nombre || it.correo;
+  const profes = new Map(profesDeGrupos().map(p => [p.correo, p.nombre]));
+  const profeNombre = c => c ? (profes.get(c) || c) : "";
+  let intentos = datos.intentos.filter(it => soyProfe() ? profeDe(it) === miCorreo() : !filtro.profe || profeDe(it) === filtro.profe);
+  const grupos = [...new Set(intentos.map(grupoDe).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  intentos = intentos.filter(it => !filtro.grupo || grupoDe(it) === filtro.grupo);
+  const filas = intentos.map(it => ({
+    it, nombre: nombreDe(it), grupo: grupoDe(it), profe: profeNombre(profeDe(it)),
+    r: it.estado === "enviado" && clave ? calificarCompuesto(ex, it.seleccion, it.respuestas, clave) : null,
+    dur: it.fin && it.inicio ? Math.round((ms(it.fin) - ms(it.inicio)) / 60000) : null,
+  })).sort((a, b) => a.grupo.localeCompare(b.grupo, "es") || a.nombre.localeCompare(b.nombre, "es"));
+  const env = filas.filter(f => f.r);
+  const prom = env.length ? Math.round(env.reduce((a, f) => a + f.r.pct, 0) / env.length) : null;
+  const aprob = env.length ? Math.round(env.filter(f => f.r.pct >= APROBATORIA).length / env.length * 100) : null;
+  const promSec = ex.secciones.map((s, i) => { const v = env.filter(f => f.r.porSec[i].total); return v.length ? Math.round(v.reduce((a, f) => a + f.r.porSec[i].pct, 0) / v.length) : null; });
+
+  main.innerHTML = `
+    <div class="encabezado"><div><h1>Resultados</h1><p>${esc(ex.titulo)}${soyProfe() ? " · tus grupos" : ""}</p></div>
+      <div class="fila-acciones"><button class="btn btn-borde" id="rx-csv" ${filas.length ? "" : "disabled"}>Descargar Excel (CSV)</button>
+      <button class="btn btn-suave" id="rx-volver">Volver</button></div></div>
+    <div class="tarjeta"><div class="en-linea">
+      ${soyProfe() ? "" : `<div class="campo" style="margin:0"><label>Profesora</label><select id="rx-profe"><option value="">Todas</option>${[...profes].map(([c, n]) => `<option value="${esc(c)}" ${c === filtro.profe ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>`}
+      <div class="campo" style="margin:0"><label>Grupo</label><select id="rx-grupo"><option value="">Todos</option>${grupos.map(g => `<option ${g === filtro.grupo ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div>
+    </div></div>
+    <div class="stats">
+      <div class="stat"><b>${filas.length}</b><span>intentos</span></div>
+      <div class="stat"><b>${env.length}</b><span>enviados</span></div>
+      <div class="stat"><b>${prom != null ? prom + "%" : "—"}</b><span>promedio</span></div>
+      <div class="stat"><b>${aprob != null ? aprob + "%" : "—"}</b><span>aprobados (≥ ${APROBATORIA}%)</span></div>
+    </div>
+    ${env.length ? `<h2 style="font-size:16px;margin:0 0 10px">Promedio por sección</h2><div class="items" style="margin-bottom:22px">${ex.secciones.map((s, i) => promSec[i] == null ? "" : `<div class="item ${promSec[i] < APROBATORIA ? "bajo" : ""}">${esc(s.nombre)} · <b>${promSec[i]}%</b><div class="mini"><i style="width:${promSec[i]}%"></i></div></div>`).join("")}</div>` : ""}
+    ${filas.length ? `<div class="tabla-envoltura"><table class="tabla">
+      <thead><tr><th>Alumno</th><th>Grupo</th><th>Estado</th>${ex.secciones.map(s => `<th style="text-align:right">${esc(s.nombre)}</th>`).join("")}<th style="text-align:right">Total</th><th style="text-align:right">Min</th><th style="text-align:right" title="Salidas de pestaña">Salidas</th><th></th></tr></thead>
+      <tbody>${filas.map((f, k) => `<tr>
+        <td><b>${esc(f.nombre)}</b><span class="sub">${esc(f.it.correo)}</span></td><td>${esc(f.grupo)}</td>
+        <td>${f.it.estado === "enviado" ? `<span class="chip verde">Enviado</span>` : `<span class="chip ambar">En curso</span>`}</td>
+        ${ex.secciones.map((s, i) => `<td class="num">${f.r ? `${f.r.porSec[i].aciertos}/${f.r.porSec[i].total}` : "—"}</td>`).join("")}
+        <td class="num"><b>${f.r ? f.r.pct + "%" : "—"}</b></td><td class="num">${f.dur ?? "—"}</td><td class="num">${f.it.cambiosPestana || 0}</td>
+        <td class="acc">${f.r ? `<button class="btn btn-suave btn-chico" data-rxver="${k}">Ver</button>` : ""}
+          <button class="btn btn-peligro btn-chico" data-rxreset="${k}">Reiniciar</button></td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="vacio">Nadie ha presentado este examen${filtro.grupo ? " en este grupo" : ""} todavía.</div>`}`;
+
+  $("#rx-volver").addEventListener("click", () => navegar("staff-examenes"));
+  $("#rx-grupo").addEventListener("change", e => renderResultadosExamen({ ...filtro, grupo: e.target.value }));
+  $("#rx-profe")?.addEventListener("change", e => renderResultadosExamen({ ...filtro, profe: e.target.value, grupo: "" }));
+  main.querySelectorAll("[data-rxver]").forEach(b => b.addEventListener("click", () => {
+    const f = filas[+b.dataset.rxver];
+    navegar("resultado-c", { ex, seleccion: f.it.seleccion, respuestas: f.it.respuestas, clave, cambiosPestana: f.it.cambiosPestana, modo: "staff",
+      alumno: { nombre: f.nombre, correo: f.it.correo, grupo: f.grupo }, volver: filtro });
+  }));
+  main.querySelectorAll("[data-rxreset]").forEach(b => b.addEventListener("click", async () => {
+    const f = filas[+b.dataset.rxreset];
+    if (!await confirmar("¿Reiniciar intento?", `Se borrará el examen de ${f.nombre} y podrá presentarlo de nuevo (con otras preguntas al azar). No se puede deshacer.`, "Reiniciar")) return;
+    const r = await conError(() => deleteDoc(doc(db, "intentosExamen", f.it.id)));
+    if (r !== undefined) { toast("Intento reiniciado"); renderResultadosExamen(filtro); }
+  }));
+  $("#rx-csv")?.addEventListener("click", () => {
+    const encab = ["Alumno", "Correo", "Matrícula", "Grupo", "Profesora", "Estado"]
+      .concat(ex.secciones.flatMap(s => [`${s.nombre} (aciertos de ${usarDe(s)})`, `${s.nombre} (%)`]))
+      .concat(["Aciertos", "Total", "Calificación (%)", `Aprobado (≥${APROBATORIA}%)`, "Inicio", "Fin", "Duración (min)", "Salidas de pestaña"]);
+    const rows = filas.map(f => [f.nombre, f.it.correo, matricula(f.it.correo), f.grupo, f.profe, f.it.estado === "enviado" ? "Enviado" : "En curso"]
+      .concat(ex.secciones.flatMap((s, i) => f.r ? [f.r.porSec[i].aciertos, f.r.porSec[i].pct] : ["", ""]))
+      .concat([f.r?.aciertos ?? "", f.r?.total ?? "", f.r ? f.r.pct : "", f.r ? (f.r.pct >= APROBATORIA ? "Sí" : "No") : "", fechaCSV(f.it.inicio), fechaCSV(f.it.fin), f.dur ?? "", f.it.cambiosPestana || 0]));
+    descargarCSV(`resultados-${slug(ex.titulo)}${filtro.grupo ? "-" + slug(filtro.grupo) : ""}.csv`, [encab, ...rows]);
+  });
 }
