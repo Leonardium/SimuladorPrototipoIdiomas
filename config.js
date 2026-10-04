@@ -29,7 +29,7 @@ export const ADMINS = [
 /* Cuentas fuera del dominio que entran como ALUMNO, para pruebas.
    Deben coincidir con ALUMNOS_PRUEBA de firestore.rules. */
 export const ALUMNOS_PRUEBA = [
-  // "cuenta.de.prueba@gmail.com"
+  "leonardium15313@gmail.com"
 ];
 
 /* Nombre que aparece al pie del login */

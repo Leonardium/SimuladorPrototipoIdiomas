@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR, ALUMNOS_PRUEBA } from "./config.js?v=6";
+import { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR, ALUMNOS_PRUEBA } from "./config.js?v=7";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -874,7 +874,7 @@ async function renderStaffLecturas() {
 
 async function cargarEjemplos() {
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=6");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=7");
     const existentes = new Set((await cargarLecturasStaff(true)).map(l => l.id));
     const nuevas = LECTURAS_EJEMPLO.filter(l => !existentes.has(l.id));
     if (!nuevas.length) { await avisar("Nada que cargar", "Todas las lecturas del banco ya están en la plataforma."); return false; }

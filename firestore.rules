@@ -15,7 +15,7 @@ service cloud.firestore {
     function ADMINS() { return ['guillermo_penaq@my.uvm.edu.mx', 'leonardo.peq13@gmail.com']; }
     function DOMINIO() { return 'my.uvm.edu.mx'; }
     // Cuentas externas que entran como alumno (pruebas). Igual que ALUMNOS_PRUEBA en config.js
-    function ALUMNOS_PRUEBA() { return []; }
+    function ALUMNOS_PRUEBA() { return ['leonardium15313@gmail.com']; }
     // Segundos de tolerancia después del tiempo límite para guardar respuestas
     function TOLERANCIA_SEG() { return 120; }
 
