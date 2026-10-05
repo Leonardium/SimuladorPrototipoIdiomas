@@ -23,7 +23,7 @@ import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import * as CFG from "./config.js?v=8";
+import * as CFG from "./config.js?v=9";
 const { firebaseConfig, DOMINIO_ALUMNOS, ADMINS, AUTOR } = CFG;
 const ALUMNOS_PRUEBA = CFG.ALUMNOS_PRUEBA || [];
 const APROBATORIA = CFG.APROBATORIA ?? 70;
@@ -889,7 +889,7 @@ async function renderStaffLecturas() {
 
 async function cargarEjemplos() {
   const listo = await conError(async () => {
-    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=8");
+    const { LECTURAS_EJEMPLO } = await import("./seed.js?v=9");
     const existentes = new Set((await cargarLecturasStaff(true)).map(l => l.id));
     const nuevas = LECTURAS_EJEMPLO.filter(l => !existentes.has(l.id));
     if (!nuevas.length) { await avisar("Nada que cargar", "Todas las lecturas del banco ya están en la plataforma."); return false; }
@@ -1460,16 +1460,20 @@ async function renderStaffGrupos() {
   cargandoEn(main);
   const esAdmin = estado.rol === "admin";
   const datos = await conError(async () => {
-    const [as, rs, cfg] = await Promise.all([
+    const [as, rs, cfg, es, is] = await Promise.all([
       getDocs(collection(db, "alumnos")),
       esAdmin ? getDocs(collection(db, "roles")) : Promise.resolve(null),
       getDoc(doc(db, "config", "general")),
+      getDocs(collection(db, "examenes")),
+      getDocs(collection(db, "intentosExamen")),
     ]);
     estado.config = cfg.exists() ? { grupos: [], ...cfg.data() } : { grupos: [] };
     if (!Array.isArray(estado.config.grupos)) estado.config.grupos = [];
     return {
       alumnos: as.docs.map(d => ({ uid: d.id, ...d.data() })),
       roles: rs ? rs.docs.map(d => ({ correo: d.id, ...d.data() })) : [],
+      examenes: es.docs.map(d => ({ id: d.id, ...d.data() })),
+      intentosEx: is.docs.map(d => d.data()),
     };
   });
   if (!datos || estado.vista !== "staff-grupos") return;
@@ -1498,6 +1502,7 @@ async function renderStaffGrupos() {
       <h1>${esAdmin ? "Grupos y usuarios" : "Mis grupos y alumnos"}</h1>
       <p>Los alumnos entran con su cuenta @${esc(DOMINIO_ALUMNOS)} y la primera vez eligen a su profesora y su grupo.</p>
     </div></div>
+    ${htmlVerificacion(grupos, alumnos, datos.examenes, datos.intentosEx, nombreProfe)}
 
     ${esAdmin ? `
     <div class="tarjeta">
@@ -1841,6 +1846,33 @@ function renderResultadoCompuesto({ ex, seleccion, respuestas, clave, cambiosPes
       <div class="frac">${p.aciertos}<small> / ${p.total} · ${p.pct}%</small></div><div class="mini"><i style="width:${p.pct}%"></i></div></div>` : "").join("")}</div>
     ${revision}`;
   $("#btn-inicio").addEventListener("click", irAtras);
+}
+
+/* ---------- Verificación previa a la aplicación ---------- */
+function htmlVerificacion(grupos, alumnos, examenes, intentosEx, nombreProfe) {
+  if (!grupos.length) return "";
+  const examenesDe = k => examenes.filter(ex => !ex.grupos?.length || ex.grupos.includes(k));
+  const prueba = examenes.find(ex => /prueba/i.test(ex.titulo || ""));
+  const hechos = new Set(intentosEx.filter(i => prueba && i.examenId === prueba.id && i.estado === "enviado").map(i => i.uid));
+  const filas = grupos.map(g => {
+    const k = claveGrupo(g.profe, g.nombre);
+    const exs = examenesDe(k).filter(ex => ex !== prueba);
+    const als = alumnos.filter(a => claveGrupo(a.profe || "", a.grupo || "") === k);
+    const listos = als.filter(a => hechos.has(a.uid)).length;
+    return `<tr><td><b>${esc(g.nombre)}</b>${soyProfe() ? "" : `<span class="sub">${esc(nombreProfe(g.profe))}</span>`}</td>
+      <td>${exs.length ? exs.map(ex => `<span class="chip ${ex.activa ? "verde" : "gris"}">${esc(ex.titulo)}${ex.activa ? " · abierto" : ""}</span>`).join(" ") : `<span class="chip rojo">Sin examen asignado</span>`}</td>
+      <td class="num">${als.length}</td>
+      ${prueba ? `<td class="num">${listos}/${als.length}</td>` : ""}</tr>`;
+  }).join("");
+  const claves = new Set(gruposCfg().map(g => claveGrupo(g.profe, g.nombre)));
+  const huerfanos = alumnos.filter(a => !claves.has(claveGrupo(a.profe || "", a.grupo || "")));
+  const pendientes = prueba ? alumnos.filter(a => !hechos.has(a.uid) && claves.has(claveGrupo(a.profe || "", a.grupo || ""))) : [];
+  return `<div class="tarjeta"><h2>Verificación para el día del examen</h2>
+    <p style="margin:0 0 12px;font-size:14px;color:var(--gris-texto)">Cada grupo debe tener su examen asignado. ${prueba ? `Los alumnos que completaron <b>${esc(prueba.titulo)}</b> ya probaron todo el proceso (entrar, registrarse, presentar y enviar), así que el día del examen les va a funcionar.` : "Tip: un examen corto llamado “Prueba…” abierto el día anterior permite comprobar que cada alumno puede entrar y presentar."}</p>
+    <div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Grupo</th><th>Examen asignado</th><th style="text-align:right">Registrados</th>${prueba ? `<th style="text-align:right" title="Completaron la prueba">Prueba OK</th>` : ""}</tr></thead><tbody>${filas}</tbody></table></div>
+    ${huerfanos.length ? `<div class="aviso" style="margin-top:12px"><b>${huerfanos.length} alumno${huerfanos.length > 1 ? "s" : ""} en un grupo que ya no existe:</b> ${huerfanos.map(a => esc(a.nombre)).join(", ")}. Corrígelos en la tabla de alumnos.</div>` : ""}
+    ${pendientes.length ? `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Registrados que aún no hacen la prueba (${pendientes.length})</summary><p style="font-size:14px">${pendientes.map(a => `${esc(a.nombre)} <span style="color:var(--gris-texto)">(${esc(matricula(a.correo))})</span>`).join(", ")}</p></details>` : ""}
+  </div>`;
 }
 
 /* ---------- Staff: lista de exámenes ---------- */

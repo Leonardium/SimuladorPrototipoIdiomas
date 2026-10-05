@@ -1521,5 +1521,52 @@ export const LECTURAS_EJEMPLO = [
     "justificacion": ""
    }
   ]
+ },
+ {
+  "id": "prueba-sistema",
+  "titulo": "Prueba de sistema",
+  "seccion": "Prueba de sistema",
+  "academia": "Academia de Inglés",
+  "fuente": "",
+  "minutos": 5,
+  "numerar": false,
+  "instrucciones": "This is only a system test. It does not count toward your grade.",
+  "parrafos": [],
+  "orden": 99,
+  "preguntas": [
+   {
+    "enunciado": "This is a system test. Choose option “Ready”.",
+    "opciones": [
+     "Not yet",
+     "Ready",
+     "Maybe"
+    ],
+    "habilidad": "Prueba",
+    "correcta": 1,
+    "justificacion": "If you can see this, everything works."
+   },
+   {
+    "enunciado": "Which word is a color?",
+    "opciones": [
+     "Table",
+     "Blue",
+     "Run"
+    ],
+    "habilidad": "Prueba",
+    "correcta": 1,
+    "justificacion": "Blue is a color."
+   },
+   {
+    "enunciado": "Complete the sentence: I ___ a student.",
+    "opciones": [
+     "am",
+     "is",
+     "are"
+    ],
+    "habilidad": "Prueba",
+    "correcta": 0,
+    "justificacion": "With “I” we use “am”."
+   }
+  ]
  }
 ];
